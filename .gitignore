@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+build-*/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcuserstate
+xcuserdata/
+UserInterfaceState.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Logs/debug
+*.log
+firebase-debug.log
+
+# Local/dev-agent config
+.claude/
+*.local.json
+
+# Secrets / signing / local config
+.env
+.env.*
+*.p8
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+GoogleService-Info.plist
