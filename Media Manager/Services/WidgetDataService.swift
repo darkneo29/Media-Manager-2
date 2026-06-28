@@ -15,7 +15,7 @@ class WidgetDataService {
     static let shared = WidgetDataService()
 
     /// App Group identifier - must match the one configured in both targets
-    static let appGroupIdentifier = "group.com.example.MediaManager"
+    static let appGroupIdentifier = "group.com.myandroidtv.MediaManager"
     static let reloadThrottleInterval: TimeInterval = 10 * 60
     static let timelineHours: Int = 4
     private static let widgetKind = "UpcomingWidget"

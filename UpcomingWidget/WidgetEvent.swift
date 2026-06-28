@@ -86,7 +86,7 @@ struct WidgetEvent: Codable, Identifiable, Hashable {
 
 extension WidgetEvent {
     /// App Group identifier - must match the one configured in both targets
-    static let appGroupIdentifier = "group.com.example.MediaManager"
+    static let appGroupIdentifier = "group.com.myandroidtv.MediaManager"
 
     /// UserDefaults keys for shared data
     private enum Keys {

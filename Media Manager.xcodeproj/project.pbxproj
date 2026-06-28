@@ -410,7 +410,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.MediaManager.org.upcomingWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.upcomingWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -444,7 +444,7 @@
 					"@executable_path/../../Frameworks",
 				);
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.MediaManager.org.upcomingWidget;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.upcomingWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -606,7 +606,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.MediaManager.org;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
@@ -652,7 +652,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.MediaManager.org;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
@@ -678,7 +678,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MediaManagerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
@@ -704,7 +704,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MediaManagerTests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManagerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
@@ -729,7 +729,7 @@
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MediaManagerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";
@@ -754,7 +754,7 @@
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.example.MediaManagerUITests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManagerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator";

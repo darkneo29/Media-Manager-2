@@ -45,7 +45,7 @@ final class CredentialStore {
     private let migrationVersion = 1
     private let serviceName: String
 
-    nonisolated init(serviceName: String = Bundle.main.bundleIdentifier ?? "com.example.MediaManager.credentials") {
+    nonisolated init(serviceName: String = Bundle.main.bundleIdentifier ?? "com.myandroidtv.MediaManager.credentials") {
         self.serviceName = serviceName
     }
 
