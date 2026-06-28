@@ -58,7 +58,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTrendingMoviesFromAPI(timeWindow: timeWindow)
         }
@@ -101,7 +102,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTrendingTVShowsFromAPI(timeWindow: timeWindow)
         }
@@ -140,7 +142,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchMovieList(endpoint: "movie/popular")
         }
@@ -157,7 +160,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchMovieList(endpoint: "movie/top_rated")
         }
@@ -174,7 +178,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.nowPlaying
+            ttl: CacheManager.TTL.nowPlaying,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchMovieList(endpoint: "movie/now_playing")
         }
@@ -191,7 +196,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.upcoming
+            ttl: CacheManager.TTL.upcoming,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchMovieList(endpoint: "movie/upcoming")
         }
@@ -208,7 +214,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTVShowList(endpoint: "tv/popular")
         }
@@ -225,7 +232,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.trending
+            ttl: CacheManager.TTL.trending,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTVShowList(endpoint: "tv/top_rated")
         }
@@ -242,7 +250,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.nowPlaying
+            ttl: CacheManager.TTL.nowPlaying,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTVShowList(endpoint: "tv/on_the_air")
         }
@@ -259,7 +268,8 @@ class TMDBService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.airingToday
+            ttl: CacheManager.TTL.airingToday,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchTVShowList(endpoint: "tv/airing_today")
         }

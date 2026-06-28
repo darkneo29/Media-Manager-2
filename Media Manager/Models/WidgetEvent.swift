@@ -93,10 +93,10 @@ extension WidgetEvent {
         switch calendarEvent.source {
         case .movie(let movie):
             isMovie = true
-            mediaId = movie.tmdbId ?? movie.id
+            mediaId = movie.id
         case .tvShow(let show):
             isMovie = false
-            mediaId = show.tvdbId ?? show.id
+            mediaId = show.id
         }
 
         return WidgetEvent(

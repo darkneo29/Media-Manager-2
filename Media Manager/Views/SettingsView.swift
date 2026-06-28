@@ -407,20 +407,6 @@ struct SettingsView: View {
                     .buttonStyle(.plain)
                 }
 
-                // Legal Section
-                SettingsSection(title: "Legal", footer: nil) {
-                    if let privacyURL = URL(string: "https://example.com/privacy") {
-                        Link(destination: privacyURL) {
-                            SettingsRow(icon: "hand.raised.fill", iconColor: ColorPalette.info, title: "Privacy Policy")
-                        }
-                    }
-                    if let tosURL = URL(string: "https://example.com/terms") {
-                        Link(destination: tosURL) {
-                            SettingsRow(icon: "doc.text.fill", iconColor: ColorPalette.textSecondaryDark, title: "Terms of Service")
-                        }
-                    }
-                }
-
                 // About Section
                 SettingsSection(title: "About", footer: "Dragon Media Manager - A unified interface for Radarr, Sonarr, and SabNZB") {
                     SettingsRow(icon: "info.circle", iconColor: ColorPalette.info, title: "Version", value: appVersionDisplay, showChevron: false)
@@ -443,7 +429,11 @@ struct SettingsView: View {
                     Divider()
                         .background(ColorPalette.divider)
 
-                    SettingsRow(icon: "link", iconColor: ColorPalette.secondary, title: "GitHub")
+                    if let githubURL = URL(string: "https://github.com/darkneo29/Media-Manager-2") {
+                        Link(destination: githubURL) {
+                            SettingsRow(icon: "link", iconColor: ColorPalette.secondary, title: "GitHub")
+                        }
+                    }
                 }
             }
             .padding(.horizontal, AppSpacing.md)

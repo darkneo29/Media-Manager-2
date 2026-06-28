@@ -35,39 +35,51 @@ enum WhatsNewCatalog {
     // Keep the newest release first so Settings can summarize the latest changes.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
-            id: "2026-04-26",
-            title: "Version 2.5",
-            subtitle: "Deeper Radarr and Sonarr library management",
+            id: "2026-06-28",
+            title: "Version 2.7",
+            subtitle: "Reliability, setup, and widget deep-link fixes",
             entries: [
                 WhatsNewEntry(
-                    id: "safe-delete-options",
-                    kind: .newFeature,
-                    title: "Safer Delete Controls",
-                    description: "Movie and TV show deletes now offer clear choices to remove items only, delete files, or delete files and add an exclusion."
-                ),
-                WhatsNewEntry(
-                    id: "file-inspector",
-                    kind: .newFeature,
-                    title: "Expanded File Details",
-                    description: "Movie and episode file cards now show richer media details including path, runtime, resolution, languages, subtitles, and date added."
-                ),
-                WhatsNewEntry(
-                    id: "episode-management",
-                    kind: .newFeature,
-                    title: "Episode-Level Management",
-                    description: "TV show details now support episode monitor toggles, season monitor actions, single-episode searches, and manual release lookup."
-                ),
-                WhatsNewEntry(
-                    id: "manual-release-search",
-                    kind: .newFeature,
-                    title: "Manual Release Picker",
-                    description: "Manual search results now surface quality, size, indexer, age, seeders, and rejection reasons before grabbing a release."
-                ),
-                WhatsNewEntry(
-                    id: "bulk-library-actions",
+                    id: "connection-recovery",
                     kind: .improvement,
-                    title: "Bulk Library Actions",
-                    description: "Movie and TV show lists now include selection mode for bulk monitor changes, quality profile updates, searches, and safe deletes."
+                    title: "Clearer Connection Recovery",
+                    description: "Home, Discover, Downloads, Movies, and TV Shows now show actionable retry states when a server or TMDB request fails instead of falling back to empty screens."
+                ),
+                WhatsNewEntry(
+                    id: "server-settings-refresh",
+                    kind: .fix,
+                    title: "More Reliable Server Settings",
+                    description: "Saved server URLs are normalized and Radarr, Sonarr, TMDB, image, library, and widget caches refresh when credentials or endpoints change."
+                ),
+                WhatsNewEntry(
+                    id: "add-flow-guards",
+                    kind: .fix,
+                    title: "Safer Add Flows",
+                    description: "Movie and show add screens now wait for quality profiles and root folders, show retry banners when options fail, and add successful items to the local library immediately."
+                ),
+                WhatsNewEntry(
+                    id: "fresh-refreshes",
+                    kind: .improvement,
+                    title: "Fresh Manual Refreshes",
+                    description: "Manual retries and refreshes now bypass stale in-flight cache requests for Radarr, Sonarr, and TMDB so the newest server response wins."
+                ),
+                WhatsNewEntry(
+                    id: "widget-deep-links",
+                    kind: .fix,
+                    title: "Widget Deep Links Fixed",
+                    description: "Upcoming release widget links now use the correct library identifiers and retry navigation after the matching movie or show finishes loading."
+                ),
+                WhatsNewEntry(
+                    id: "service-error-details",
+                    kind: .fix,
+                    title: "Better Service Error Details",
+                    description: "SABnzbd authentication, download history failures, and Unraid GraphQL errors now surface clearer messages for faster troubleshooting."
+                ),
+                WhatsNewEntry(
+                    id: "version-settings-cleanup",
+                    kind: .improvement,
+                    title: "Version and Settings Cleanup",
+                    description: "The app now reports version 2.7 with build 7, removes placeholder legal links, and opens the real project GitHub link from Settings."
                 )
             ]
         ),

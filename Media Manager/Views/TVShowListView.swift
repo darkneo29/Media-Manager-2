@@ -28,7 +28,7 @@ struct TVShowListView: View {
     @State private var cachedFilteredShows: [TVShow] = []
     @State private var lastSearchText: String = ""
     @State private var lastStatusFilter: TVShowStatusFilter = .all
-    @State private var lastShowsHash: Int = 0
+    @State private var lastShowsRevision: Int = -1
 
     /// Deep link TV show ID binding - set by MainTabView for widget navigation
     @Binding var deepLinkTVShowId: Int?
@@ -49,14 +49,14 @@ struct TVShowListView: View {
     /// Update cached filtered shows when inputs change
     private func updateFilteredShows() {
         let shows = libraryManager.sortedShows
-        let currentHash = shows.hashValue
+        let currentRevision = libraryManager.tvShowsRevision
 
         // Only recompute if something changed
-        guard searchText != lastSearchText || statusFilter != lastStatusFilter || currentHash != lastShowsHash else { return }
+        guard searchText != lastSearchText || statusFilter != lastStatusFilter || currentRevision != lastShowsRevision else { return }
 
         lastSearchText = searchText
         lastStatusFilter = statusFilter
-        lastShowsHash = currentHash
+        lastShowsRevision = currentRevision
 
         var filtered = shows
 
@@ -136,6 +136,23 @@ struct TVShowListView: View {
                 } else if libraryManager.isLoadingShows && libraryManager.tvShows.isEmpty {
                     ProgressView()
                         .tint(ColorPalette.primary)
+                } else if let message = libraryManager.showsErrorMessage, libraryManager.tvShows.isEmpty {
+                    PlaceholderView(
+                        icon: "wifi.exclamationmark",
+                        title: "Couldn't Load TV Shows",
+                        description: message,
+                        action: PlaceholderView.ActionConfig(
+                            title: "Try Again",
+                            icon: "arrow.clockwise",
+                            handler: {
+                                Task {
+                                    await libraryManager.loadShows(forceRefresh: true)
+                                    updateFilteredShows()
+                                    handlePendingDeepLink()
+                                }
+                            }
+                        )
+                    )
                 } else if filteredShows.isEmpty && (!searchText.isEmpty || statusFilter != .all) {
                     VStack(spacing: isTVOS ? AppSpacing.lg : AppSpacing.md) {
                         Image(systemName: statusFilter != .all ? "line.3.horizontal.decrease.circle" : "magnifyingglass")
@@ -276,6 +293,7 @@ struct TVShowListView: View {
                     loadQualityProfiles()
                 }
                 updateFilteredShows()
+                handlePendingDeepLink()
             }
             .onChange(of: searchText) { _, _ in
                 updateFilteredShows()
@@ -283,22 +301,14 @@ struct TVShowListView: View {
             .onChange(of: statusFilter) { _, _ in
                 updateFilteredShows()
             }
-            .onChange(of: libraryManager.tvShows) { _, shows in
+            .onChange(of: libraryManager.tvShowsRevision) { _, _ in
                 updateFilteredShows()
                 // Retry deep link if pending
-                if let showId = deepLinkTVShowId,
-                   let show = shows.first(where: { $0.id == showId }) {
-                    navigationPath.append(show)
-                    deepLinkTVShowId = nil
-                }
+                handlePendingDeepLink()
             }
             .onChange(of: deepLinkTVShowId) { _, showId in
                 // Handle deep link navigation from widget
-                if let showId = showId,
-                   let show = libraryManager.tvShows.first(where: { $0.id == showId }) {
-                    navigationPath.append(show)
-                    deepLinkTVShowId = nil
-                }
+                handlePendingDeepLink(showId)
                 // Don't clear deepLinkTVShowId if show not found - retry when data loads
             }
             .alert("Error", isPresented: Binding<Bool>(
@@ -384,6 +394,16 @@ struct TVShowListView: View {
         } else {
             navigationPath.append(show)
         }
+    }
+
+    private func handlePendingDeepLink(_ showId: Int? = nil) {
+        guard let showId = showId ?? deepLinkTVShowId,
+              let show = libraryManager.tvShows.first(where: { $0.id == showId || $0.tvdbId == showId }) else {
+            return
+        }
+
+        navigationPath.append(show)
+        deepLinkTVShowId = nil
     }
 
     private func selectedShows() -> [TVShow] {

@@ -17,7 +17,7 @@ struct MovieListView: View {
     // MARK: - Cached/Memoized State for tvOS Performance
     @State private var cachedFilteredMovies: [Movie] = []
     @State private var lastSearchText: String = ""
-    @State private var lastMoviesHash: Int = 0
+    @State private var lastMoviesRevision: Int = -1
 
     /// Deep link movie ID binding - set by MainTabView for widget navigation
     @Binding var deepLinkMovieId: Int?
@@ -38,13 +38,13 @@ struct MovieListView: View {
     /// Update cached filtered movies when inputs change
     private func updateFilteredMovies() {
         let movies = libraryManager.sortedMovies
-        let currentHash = movies.hashValue
+        let currentRevision = libraryManager.moviesRevision
 
         // Only recompute if something changed
-        guard searchText != lastSearchText || currentHash != lastMoviesHash else { return }
+        guard searchText != lastSearchText || currentRevision != lastMoviesRevision else { return }
 
         lastSearchText = searchText
-        lastMoviesHash = currentHash
+        lastMoviesRevision = currentRevision
 
         if searchText.isEmpty {
             cachedFilteredMovies = movies
@@ -116,6 +116,23 @@ struct MovieListView: View {
                 } else if libraryManager.isLoadingMovies && libraryManager.movies.isEmpty {
                     ProgressView()
                         .tint(ColorPalette.primary)
+                } else if let message = libraryManager.moviesErrorMessage, libraryManager.movies.isEmpty {
+                    PlaceholderView(
+                        icon: "wifi.exclamationmark",
+                        title: "Couldn't Load Movies",
+                        description: message,
+                        action: PlaceholderView.ActionConfig(
+                            title: "Try Again",
+                            icon: "arrow.clockwise",
+                            handler: {
+                                Task {
+                                    await libraryManager.loadMovies(forceRefresh: true)
+                                    updateFilteredMovies()
+                                    handlePendingDeepLink()
+                                }
+                            }
+                        )
+                    )
                 } else if filteredMovies.isEmpty && !searchText.isEmpty {
                     VStack(spacing: isTVOS ? AppSpacing.lg : AppSpacing.md) {
                         Image(systemName: "magnifyingglass")
@@ -224,27 +241,20 @@ struct MovieListView: View {
                     loadQualityProfiles()
                 }
                 updateFilteredMovies()
+                handlePendingDeepLink()
             }
             .onChange(of: searchText) { _, _ in
                 updateFilteredMovies()
             }
             .onChange(of: deepLinkMovieId) { _, movieId in
                 // Handle deep link navigation from widget
-                if let movieId = movieId,
-                   let movie = libraryManager.movies.first(where: { $0.id == movieId }) {
-                    navigationPath.append(movie)
-                    deepLinkMovieId = nil
-                }
+                handlePendingDeepLink(movieId)
                 // Don't clear deepLinkMovieId if movie not found - retry when data loads
             }
-            .onChange(of: libraryManager.movies) { _, movies in
+            .onChange(of: libraryManager.moviesRevision) { _, _ in
                 updateFilteredMovies()
                 // Retry deep link if pending
-                if let movieId = deepLinkMovieId,
-                   let movie = movies.first(where: { $0.id == movieId }) {
-                    navigationPath.append(movie)
-                    deepLinkMovieId = nil
-                }
+                handlePendingDeepLink()
             }
             .alert("Error", isPresented: Binding<Bool>(
                 get: { errorMessage != nil },
@@ -329,6 +339,16 @@ struct MovieListView: View {
         } else {
             navigationPath.append(movie)
         }
+    }
+
+    private func handlePendingDeepLink(_ movieId: Int? = nil) {
+        guard let movieId = movieId ?? deepLinkMovieId,
+              let movie = libraryManager.movies.first(where: { $0.id == movieId || $0.tmdbId == movieId }) else {
+            return
+        }
+
+        navigationPath.append(movie)
+        deepLinkMovieId = nil
     }
 
     private func selectedMovies() -> [Movie] {

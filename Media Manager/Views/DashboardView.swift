@@ -37,6 +37,10 @@ struct DashboardView: View {
         configuration.isTMDBConfigured
     }
 
+    private var dashboardErrorMessage: String? {
+        errorMessage ?? libraryState.moviesErrorMessage ?? libraryState.showsErrorMessage
+    }
+
     /// Grid columns for iPad: 4 columns to display more content
     private var iPadGridColumns: [GridItem] {
         Array(repeating: GridItem(.flexible(), spacing: AppSpacing.md), count: 4)
@@ -90,6 +94,22 @@ struct DashboardView: View {
                             .font(AppTypography.subheadline())
                             .foregroundColor(ColorPalette.textMutedDark)
                     }
+                } else if let message = dashboardErrorMessage, !hasDataToDisplay {
+                    PlaceholderView(
+                        icon: "wifi.exclamationmark",
+                        title: "Couldn't Load Home",
+                        description: message,
+                        action: PlaceholderView.ActionConfig(
+                            title: "Try Again",
+                            icon: "arrow.clockwise",
+                            handler: {
+                                Task {
+                                    await loadData(forceRefresh: true, forceWidgetReload: true)
+                                    hasLoadedInitialData = true
+                                }
+                            }
+                        )
+                    )
                 } else {
                     #if os(tvOS)
                     // tvOS: Fixed header with scrollable content below

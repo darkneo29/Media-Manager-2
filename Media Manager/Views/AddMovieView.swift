@@ -17,6 +17,7 @@ struct AddMovieView: View {
     @State private var selectedQualityProfileId: Int = 1
     @State private var selectedRootFolderPath: String = ""
     @State private var isLoadingOptions = true
+    @State private var optionsErrorMessage: String?
     @State private var searchForMovie: Bool = true
 
     // Debouncing support
@@ -25,6 +26,10 @@ struct AddMovieView: View {
     @FocusState private var isSearchFieldFocused: Bool
 
     @Environment(\.dismiss) var dismiss
+
+    private var canAddMovie: Bool {
+        !isLoadingOptions && optionsErrorMessage == nil && !qualityProfiles.isEmpty && !rootFolders.isEmpty
+    }
 
     var body: some View {
         ZStack {
@@ -83,6 +88,12 @@ struct AddMovieView: View {
                 #else
                 iOSOptionsSection
                 #endif
+
+                if let optionsErrorMessage {
+                    optionErrorBanner(message: optionsErrorMessage) {
+                        loadOptions(forceRefresh: true)
+                    }
+                }
 
                 Divider()
                     .background(ColorPalette.divider)
@@ -323,17 +334,20 @@ struct AddMovieView: View {
     }
     #endif
 
-    private func loadOptions() {
+    private func loadOptions(forceRefresh: Bool = false) {
+        isLoadingOptions = true
+        optionsErrorMessage = nil
         Task {
             do {
-                async let profilesTask = RadarrService.shared.fetchQualityProfiles()
-                async let foldersTask = RadarrService.shared.fetchRootFolders()
+                async let profilesTask = RadarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
+                async let foldersTask = RadarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
 
                 let (profiles, folders) = try await (profilesTask, foldersTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
+                    optionsErrorMessage = nil
 
                     // Select first profile or HD-1080p if available
                     if let hdProfile = profiles.first(where: { $0.name.contains("1080") || $0.name.contains("HD") }) {
@@ -351,6 +365,7 @@ struct AddMovieView: View {
                 }
             } catch {
                 await MainActor.run {
+                    optionsErrorMessage = "Could not load Radarr profiles or root folders: \(error.localizedDescription)"
                     isLoadingOptions = false
                 }
             }
@@ -433,6 +448,11 @@ struct AddMovieView: View {
     @State private var pendingMovie: Movie?
 
     private func addMovie(_ movie: MovieLookup) {
+        guard canAddMovie else {
+            errorMessage = optionsErrorMessage ?? "Load a quality profile and root folder before adding a movie."
+            return
+        }
+
         addingMovieId = movie.tmdbId
         Task {
             do {
@@ -443,6 +463,7 @@ struct AddMovieView: View {
                     searchForMovie: searchForMovie
                 )
                 await MainActor.run {
+                    LibraryStateManager.shared.addMovieLocally(addedMovie)
                     pendingMovie = addedMovie
                     dismiss()
                 }
@@ -453,6 +474,29 @@ struct AddMovieView: View {
                 }
             }
         }
+    }
+
+    private func optionErrorBanner(message: String, retry: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(ColorPalette.warning)
+
+            Text(message)
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textSecondaryDark)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+
+            Button("Retry", action: retry)
+                .font(AppTypography.caption1(.semibold))
+                .foregroundColor(ColorPalette.secondary)
+        }
+        .padding(AppSpacing.sm)
+        .background(ColorPalette.warning.opacity(0.12))
+        .cornerRadius(AppRadius.md)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.bottom, AppSpacing.sm)
     }
 }
 

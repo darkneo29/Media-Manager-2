@@ -66,8 +66,8 @@ struct CalendarView: View {
     @State private var cachedDayData: [CalendarDayData] = []
 
     /// Track data version to detect changes
-    @State private var lastMoviesHash: Int = 0
-    @State private var lastShowsHash: Int = 0
+    @State private var lastMoviesRevision: Int = -1
+    @State private var lastShowsRevision: Int = -1
     @State private var lastDisplayedMonth: Date?
 
     private let calendar = Calendar.current
@@ -163,17 +163,17 @@ struct CalendarView: View {
         }
         .onAppear {
             if cachedDayData.isEmpty {
-                rebuildEventCacheIfNeeded(movies: libraryState.movies, tvShows: libraryState.tvShows)
+                rebuildEventCacheIfNeeded()
             }
             Task {
                 await libraryState.loadAll()
             }
         }
-        .onChange(of: libraryState.movies) { _, newMovies in
-            rebuildEventCacheIfNeeded(movies: newMovies, tvShows: libraryState.tvShows)
+        .onChange(of: libraryState.moviesRevision) { _, _ in
+            rebuildEventCacheIfNeeded()
         }
-        .onChange(of: libraryState.tvShows) { _, newShows in
-            rebuildEventCacheIfNeeded(movies: libraryState.movies, tvShows: newShows)
+        .onChange(of: libraryState.tvShowsRevision) { _, _ in
+            rebuildEventCacheIfNeeded()
         }
         .onChange(of: displayedMonth) { _, _ in
             rebuildDayDataCache()
@@ -392,17 +392,17 @@ struct CalendarView: View {
         .onAppear {
             // Initialize cache with existing data if available
             if cachedDayData.isEmpty {
-                rebuildEventCacheIfNeeded(movies: libraryState.movies, tvShows: libraryState.tvShows)
+                rebuildEventCacheIfNeeded()
             }
             Task {
                 await libraryState.loadAll()
             }
         }
-        .onChange(of: libraryState.movies) { _, newMovies in
-            rebuildEventCacheIfNeeded(movies: newMovies, tvShows: libraryState.tvShows)
+        .onChange(of: libraryState.moviesRevision) { _, _ in
+            rebuildEventCacheIfNeeded()
         }
-        .onChange(of: libraryState.tvShows) { _, newShows in
-            rebuildEventCacheIfNeeded(movies: libraryState.movies, tvShows: newShows)
+        .onChange(of: libraryState.tvShowsRevision) { _, _ in
+            rebuildEventCacheIfNeeded()
         }
         .onChange(of: displayedMonth) { _, _ in
             rebuildDayDataCache()
@@ -417,18 +417,18 @@ struct CalendarView: View {
     // MARK: - Cache Management
 
     /// Rebuild the events cache if the underlying data has changed
-    private func rebuildEventCacheIfNeeded(movies: [Movie], tvShows: [TVShow]) {
-        let moviesHash = movies.hashValue
-        let showsHash = tvShows.hashValue
+    private func rebuildEventCacheIfNeeded() {
+        let moviesRevision = libraryState.moviesRevision
+        let showsRevision = libraryState.tvShowsRevision
 
         // Only rebuild if data actually changed
-        guard moviesHash != lastMoviesHash || showsHash != lastShowsHash else { return }
+        guard moviesRevision != lastMoviesRevision || showsRevision != lastShowsRevision else { return }
 
-        lastMoviesHash = moviesHash
-        lastShowsHash = showsHash
+        lastMoviesRevision = moviesRevision
+        lastShowsRevision = showsRevision
 
         // Build all events
-        cachedEvents = CalendarEventBuilder.allEvents(movies: movies, tvShows: tvShows)
+        cachedEvents = CalendarEventBuilder.allEvents(movies: libraryState.movies, tvShows: libraryState.tvShows)
 
         // Build date-indexed dictionary for O(1) lookup
         var byDate: [DateComponents: [CalendarEvent]] = [:]

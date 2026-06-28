@@ -98,7 +98,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.qualityProfiles
+            ttl: CacheManager.TTL.qualityProfiles,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchQualityProfilesFromAPI()
         }
@@ -136,8 +137,6 @@ class SonarrService {
             throw URLError(.badServerResponse)
         }
 
-        // Refresh configuration when settings change
-        await ConfigurationManager.shared.refreshConfiguration()
     }
 
     /// Fetches all TV shows with caching
@@ -150,7 +149,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.library
+            ttl: CacheManager.TTL.library,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchShowsFromAPI()
         }
@@ -505,7 +505,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.qualityProfiles // Root folders rarely change
+            ttl: CacheManager.TTL.qualityProfiles, // Root folders rarely change
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchRootFoldersFromAPI()
         }
@@ -541,7 +542,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.library
+            ttl: CacheManager.TTL.library,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchEpisodesFromAPI(seriesId: seriesId)
         }
@@ -682,7 +684,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.short
+            ttl: CacheManager.TTL.short,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchQueueFromAPI()
         }
@@ -738,7 +741,8 @@ class SonarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.library
+            ttl: CacheManager.TTL.library,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchWantedFromAPI()
         }

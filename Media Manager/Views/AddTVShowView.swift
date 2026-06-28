@@ -15,6 +15,7 @@ struct AddTVShowView: View {
     @State private var selectedQualityProfileId: Int = 6
     @State private var selectedRootFolderPath: String = ""
     @State private var isLoadingOptions = true
+    @State private var optionsErrorMessage: String?
 
     // Debouncing support
     @State private var searchTask: Task<Void, Never>?
@@ -22,6 +23,10 @@ struct AddTVShowView: View {
     @FocusState private var isSearchFieldFocused: Bool
 
     @Environment(\.dismiss) var dismiss
+
+    private var canAddShow: Bool {
+        !isLoadingOptions && optionsErrorMessage == nil && !qualityProfiles.isEmpty && !rootFolders.isEmpty
+    }
 
     var body: some View {
         ZStack {
@@ -175,6 +180,12 @@ struct AddTVShowView: View {
                 .padding(.horizontal, AppSpacing.md)
                 .padding(.bottom, AppSpacing.sm)
 
+                if let optionsErrorMessage {
+                    optionErrorBanner(message: optionsErrorMessage) {
+                        loadOptions(forceRefresh: true)
+                    }
+                }
+
                 Divider()
                     .background(ColorPalette.divider)
 
@@ -258,17 +269,20 @@ struct AddTVShowView: View {
         }
     }
 
-    private func loadOptions() {
+    private func loadOptions(forceRefresh: Bool = false) {
+        isLoadingOptions = true
+        optionsErrorMessage = nil
         Task {
             do {
-                async let profilesTask = SonarrService.shared.fetchQualityProfiles()
-                async let foldersTask = SonarrService.shared.fetchRootFolders()
+                async let profilesTask = SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
+                async let foldersTask = SonarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
 
                 let (profiles, folders) = try await (profilesTask, foldersTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
+                    optionsErrorMessage = nil
 
                     // Select HD - 720p/1080p by default if available, otherwise first profile
                     if let hdCombo = profiles.first(where: { $0.id == 6 || $0.name.contains("720p/1080p") }) {
@@ -286,6 +300,7 @@ struct AddTVShowView: View {
                 }
             } catch {
                 await MainActor.run {
+                    optionsErrorMessage = "Could not load Sonarr profiles or root folders: \(error.localizedDescription)"
                     isLoadingOptions = false
                 }
             }
@@ -351,6 +366,11 @@ struct AddTVShowView: View {
     @State private var pendingShow: TVShow?
 
     private func addShow(_ show: TVShowLookup) {
+        guard canAddShow else {
+            errorMessage = optionsErrorMessage ?? "Load a quality profile and root folder before adding a show."
+            return
+        }
+
         addingShowId = show.tvdbId
         Task {
             do {
@@ -362,6 +382,7 @@ struct AddTVShowView: View {
                     searchForMissingEpisodes: searchForMissing
                 )
                 await MainActor.run {
+                    LibraryStateManager.shared.addShowLocally(addedShow)
                     pendingShow = addedShow
                     dismiss()
                 }
@@ -372,6 +393,29 @@ struct AddTVShowView: View {
                 }
             }
         }
+    }
+
+    private func optionErrorBanner(message: String, retry: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(ColorPalette.warning)
+
+            Text(message)
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textSecondaryDark)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+
+            Button("Retry", action: retry)
+                .font(AppTypography.caption1(.semibold))
+                .foregroundColor(ColorPalette.secondary)
+        }
+        .padding(AppSpacing.sm)
+        .background(ColorPalette.warning.opacity(0.12))
+        .cornerRadius(AppRadius.md)
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.bottom, AppSpacing.sm)
     }
 }
 

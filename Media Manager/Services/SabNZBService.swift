@@ -30,19 +30,22 @@ class SabNZBService {
 
     // MARK: - Request Helpers
 
-    /// Creates an authenticated URLRequest for SabNZB with API key header and timeout
-    private func authenticatedRequest(url: URL, apiKey: String? = nil) -> URLRequest {
+    /// Creates a URLRequest for SabNZB with a timeout.
+    private func authenticatedRequest(url: URL) -> URLRequest {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
-        request.setValue(apiKey ?? self.apiKey, forHTTPHeaderField: "X-Api-Key")
         return request
     }
 
-    /// Builds a SabNZB API URL with mode and optional extra params (keeps output=json, moves apikey to header)
-    private func sabURL(base: String? = nil, mode: String, extraParams: [(String, String)] = []) -> URL? {
+    /// Builds a SabNZB API URL with mode, output=json, and the required API key query item.
+    private func sabURL(base: String? = nil, apiKey: String? = nil, mode: String, extraParams: [(String, String)] = []) -> URL? {
         let apiBase = base ?? baseURL
         var components = URLComponents(string: "\(apiBase)/api")
         var queryItems = [URLQueryItem(name: "mode", value: mode), URLQueryItem(name: "output", value: "json")]
+        let resolvedAPIKey = apiKey ?? self.apiKey
+        if !resolvedAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "apikey", value: resolvedAPIKey))
+        }
         for (key, value) in extraParams {
             queryItems.append(URLQueryItem(name: key, value: value))
         }
@@ -63,11 +66,11 @@ class SabNZBService {
 
     /// Tests the connection to the SabNZB server using the provided URL and API key
     func testConnection(url: String, apiKey: String) async throws {
-        guard let testURL = sabURL(base: url, mode: "version") else {
+        guard let testURL = sabURL(base: url, apiKey: apiKey, mode: "queue") else {
             throw URLError(.badURL)
         }
 
-        let request = authenticatedRequest(url: testURL, apiKey: apiKey)
+        let request = authenticatedRequest(url: testURL)
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
@@ -213,11 +216,11 @@ class SabNZBService {
 
     /// Fetches current warnings from SabNZB
     func fetchWarnings(url: String, apiKey: String) async throws -> [SabNZBWarning] {
-        guard let requestURL = sabURL(base: url, mode: "warnings") else {
+        guard let requestURL = sabURL(base: url, apiKey: apiKey, mode: "warnings") else {
             throw URLError(.badURL)
         }
 
-        let request = authenticatedRequest(url: requestURL, apiKey: apiKey)
+        let request = authenticatedRequest(url: requestURL)
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,
@@ -240,11 +243,11 @@ class SabNZBService {
 
     /// Clears all warnings from SabNZB
     func clearWarnings(url: String, apiKey: String) async throws {
-        guard let requestURL = sabURL(base: url, mode: "warnings", extraParams: [("name", "clear")]) else {
+        guard let requestURL = sabURL(base: url, apiKey: apiKey, mode: "warnings", extraParams: [("name", "clear")]) else {
             throw URLError(.badURL)
         }
 
-        let request = authenticatedRequest(url: requestURL, apiKey: apiKey)
+        let request = authenticatedRequest(url: requestURL)
         let (data, response) = try await URLSession.shared.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse,

@@ -80,17 +80,6 @@ struct Movie: Codable, Identifiable, Hashable {
         status == "announced" || status == "inCinemas"
     }
 
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-        hasher.combine(monitored)
-        hasher.combine(qualityProfileId)
-    }
-
-    static func == (lhs: Movie, rhs: Movie) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.monitored == rhs.monitored &&
-        lhs.qualityProfileId == rhs.qualityProfileId
-    }
 }
 
 struct MovieLookup: Codable, Identifiable {

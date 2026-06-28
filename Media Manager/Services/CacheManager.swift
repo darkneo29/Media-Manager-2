@@ -118,6 +118,7 @@ actor CacheManager {
     func fetchWithCache<T>(
         key: String,
         ttl: TimeInterval,
+        bypassInFlight: Bool = false,
         fetch: @escaping () async throws -> T
     ) async throws -> T {
         // Check cache first
@@ -126,7 +127,10 @@ actor CacheManager {
         }
 
         // Check for in-flight request
-        if let existingTask = inFlightRequests[key] {
+        if bypassInFlight {
+            inFlightRequests[key]?.cancel()
+            inFlightRequests.removeValue(forKey: key)
+        } else if let existingTask = inFlightRequests[key] {
             // Wait for existing request
             let result = try await existingTask.value
             if let typedResult = result as? T {

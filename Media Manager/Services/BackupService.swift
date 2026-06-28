@@ -121,12 +121,12 @@ class BackupService {
             secrets = backup.legacyPlaintextSecrets
         }
 
-        defaults.set(backup.radarr.url, forKey: "radarrURL")
-        defaults.set(backup.sonarr.url, forKey: "sonarrURL")
-        defaults.set(backup.sabnzb.url, forKey: "sabnzbURL")
+        defaults.set(ConfigurationManager.normalizedServerURL(backup.radarr.url), forKey: "radarrURL")
+        defaults.set(ConfigurationManager.normalizedServerURL(backup.sonarr.url), forKey: "sonarrURL")
+        defaults.set(ConfigurationManager.normalizedServerURL(backup.sabnzb.url), forKey: "sabnzbURL")
 
         if let unraid = backup.unraid {
-            defaults.set(unraid.url, forKey: "unraidURL")
+            defaults.set(ConfigurationManager.normalizedServerURL(unraid.url), forKey: "unraidURL")
             defaults.set(unraid.showMediaStackFirst, forKey: "unraidShowMediaStackFirst")
             defaults.set(unraid.temperatureUnit, forKey: "unraidTemperatureUnit")
         } else {
@@ -142,7 +142,7 @@ class BackupService {
         try credentialStore.set(secrets.unraidAPIKey ?? "", for: .unraidAPIKey)
 
         Task { @MainActor in
-            ConfigurationManager.shared.refreshConfiguration()
+            ConfigurationManager.shared.refreshConfiguration(invalidateCaches: true)
         }
     }
 

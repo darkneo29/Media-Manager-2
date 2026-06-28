@@ -105,7 +105,8 @@ class RadarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.library
+            ttl: CacheManager.TTL.library,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchMoviesFromAPI()
         }
@@ -323,8 +324,6 @@ class RadarrService {
             throw URLError(.badServerResponse)
         }
 
-        // Refresh configuration when settings change
-        await ConfigurationManager.shared.refreshConfiguration()
     }
 
     /// Invalidate all Radarr-related caches
@@ -504,7 +503,8 @@ class RadarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.qualityProfiles // Root folders rarely change
+            ttl: CacheManager.TTL.qualityProfiles, // Root folders rarely change
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchRootFoldersFromAPI()
         }
@@ -540,7 +540,8 @@ class RadarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.qualityProfiles
+            ttl: CacheManager.TTL.qualityProfiles,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchQualityProfilesFromAPI()
         }
@@ -576,7 +577,8 @@ class RadarrService {
 
         return try await CacheManager.shared.fetchWithCache(
             key: cacheKey,
-            ttl: CacheManager.TTL.short
+            ttl: CacheManager.TTL.short,
+            bypassInFlight: forceRefresh
         ) {
             try await self.fetchQueueFromAPI()
         }

@@ -78,11 +78,16 @@ final class ConfigurationManager: ObservableObject {
 
     /// Refresh cached configuration from UserDefaults
     /// Call this when settings are updated
-    func refreshConfiguration() {
+    func refreshConfiguration(invalidateCaches: Bool = false) {
         loadConfiguration()
         // Also refresh ImageCacheManager's configuration
         Task {
             await ImageCacheManager.shared.refreshConfiguration()
+            if invalidateCaches {
+                await CacheManager.shared.clearAll()
+                await ImageCacheManager.shared.clearAll()
+                WidgetDataService.shared.clearWidgetData()
+            }
         }
     }
 
@@ -103,21 +108,23 @@ final class ConfigurationManager: ObservableObject {
 
     func saveRadarr(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(url, forKey: Keys.radarrURL)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.radarrURL)
         try credentialStore.set(apiKey, for: .radarrAPIKey)
         refreshConfiguration()
+        invalidateRadarrState()
     }
 
     func saveSonarr(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(url, forKey: Keys.sonarrURL)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sonarrURL)
         try credentialStore.set(apiKey, for: .sonarrAPIKey)
         refreshConfiguration()
+        invalidateSonarrState()
     }
 
     func saveSabNZB(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(url, forKey: Keys.sabnzbURL)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sabnzbURL)
         try credentialStore.set(apiKey, for: .sabnzbAPIKey)
         refreshConfiguration()
     }
@@ -125,11 +132,12 @@ final class ConfigurationManager: ObservableObject {
     func saveTMDBToken(_ token: String) throws {
         try credentialStore.set(token, for: .tmdbAccessToken)
         refreshConfiguration()
+        invalidateTMDBState()
     }
 
     func saveUnraid(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(url, forKey: Keys.unraidURL)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.unraidURL)
         try credentialStore.set(apiKey, for: .unraidAPIKey)
         refreshConfiguration()
     }
@@ -157,5 +165,35 @@ final class ConfigurationManager: ObservableObject {
     /// Check if TMDB is configured
     var isTMDBConfigured: Bool {
         !tmdbAccessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    nonisolated static func normalizedServerURL(_ url: String) -> String {
+        var normalized = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        while normalized.count > 1 && normalized.hasSuffix("/") && !normalized.hasSuffix("://") {
+            normalized.removeLast()
+        }
+        return normalized
+    }
+
+    private func invalidateRadarrState() {
+        Task {
+            await RadarrService.shared.invalidateCache()
+            await ImageCacheManager.shared.clearAll()
+            await LibraryStateManager.shared.invalidateMovies()
+        }
+    }
+
+    private func invalidateSonarrState() {
+        Task {
+            await SonarrService.shared.invalidateCache()
+            await ImageCacheManager.shared.clearAll()
+            await LibraryStateManager.shared.invalidateShows()
+        }
+    }
+
+    private func invalidateTMDBState() {
+        Task {
+            await TMDBService.shared.invalidateCache()
+        }
     }
 }

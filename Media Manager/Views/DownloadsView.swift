@@ -350,6 +350,14 @@ struct DownloadsView: View {
 
             if isLoading && activeDownloads.isEmpty {
                 loadingView
+            } else if let errorMessage, activeDownloads.isEmpty {
+                downloadErrorView(
+                    title: "Couldn't Load Downloads",
+                    message: errorMessage,
+                    retry: {
+                        await refreshQueue()
+                    }
+                )
             } else if activeDownloads.isEmpty {
                 emptyActiveView
             } else {
@@ -424,6 +432,14 @@ struct DownloadsView: View {
         Group {
             if isLoading && historyDownloads.isEmpty {
                 loadingView
+            } else if let errorMessage, historyDownloads.isEmpty {
+                downloadErrorView(
+                    title: "Couldn't Load History",
+                    message: errorMessage,
+                    retry: {
+                        await refreshHistory()
+                    }
+                )
             } else if historyDownloads.isEmpty {
                 emptyHistoryView
             } else {
@@ -463,6 +479,23 @@ struct DownloadsView: View {
                 .padding(.top, AppSpacing.md)
             Spacer()
         }
+    }
+
+    private func downloadErrorView(title: String, message: String, retry: @escaping () async -> Void) -> some View {
+        PlaceholderView(
+            icon: "wifi.exclamationmark",
+            title: title,
+            description: message,
+            action: PlaceholderView.ActionConfig(
+                title: "Try Again",
+                icon: "arrow.clockwise",
+                handler: {
+                    Task {
+                        await retry()
+                    }
+                }
+            )
+        )
     }
 
     private var emptyActiveView: some View {
@@ -695,7 +728,7 @@ struct DownloadsView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load downloads"
+                errorMessage = "Failed to load downloads: \(error.localizedDescription)"
             }
         }
     }
@@ -709,7 +742,7 @@ struct DownloadsView: View {
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load history"
+                errorMessage = "Failed to load history: \(error.localizedDescription)"
             }
         }
     }

@@ -58,10 +58,10 @@ class UnraidService {
             }
             let task = Task<UnraidAllData, Error> {
                 defer {
-                    Task { await self.clearInFlightTask() }
+                    Task { self.clearInFlightTask() }
                 }
                 let result = try await factory()
-                await self.setCachedData(result)
+                self.setCachedData(result)
                 return result
             }
             inFlightTask = task
@@ -887,8 +887,16 @@ class UnraidService {
         decoder.dateDecodingStrategy = .iso8601
 
         do {
-            return try decoder.decode(GraphQLResponse<T>.self, from: data)
+            let graphQLResponse = try decoder.decode(GraphQLResponse<T>.self, from: data)
+            if let errors = graphQLResponse.errors, !errors.isEmpty {
+                let message = errors.map(\.message).joined(separator: "\n")
+                throw UnraidError.graphQLError(message)
+            }
+            return graphQLResponse
         } catch {
+            if let unraidError = error as? UnraidError {
+                throw unraidError
+            }
             #if DEBUG
             if let jsonString = String(data: data, encoding: .utf8) {
                 print("Failed to decode response: \(jsonString)")

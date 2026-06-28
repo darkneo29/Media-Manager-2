@@ -358,6 +358,11 @@ struct QuickAddMovieSheet: View {
     }
 
     private func addMovie() {
+        guard !isLoadingOptions, !qualityProfiles.isEmpty, !rootFolders.isEmpty else {
+            errorMessage = "Load a quality profile and root folder before adding this movie."
+            return
+        }
+
         isAdding = true
         errorMessage = nil
 
@@ -797,6 +802,11 @@ struct QuickAddTVShowSheet: View {
     }
 
     private func addShow() {
+        guard !isLoadingOptions, libraryState.defaultQualityProfile != nil, !rootFolders.isEmpty else {
+            errorMessage = "Load a quality profile and root folder before adding this show."
+            return
+        }
+
         isAdding = true
         errorMessage = nil
 

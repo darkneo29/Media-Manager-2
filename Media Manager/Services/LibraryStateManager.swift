@@ -10,10 +10,16 @@ class LibraryStateManager: ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var movies: [Movie] = [] {
-        didSet { invalidateCachedIndexes() }
+        didSet {
+            moviesRevision += 1
+            invalidateCachedIndexes()
+        }
     }
     @Published private(set) var tvShows: [TVShow] = [] {
-        didSet { invalidateCachedIndexes() }
+        didSet {
+            tvShowsRevision += 1
+            invalidateCachedIndexes()
+        }
     }
     @Published private(set) var qualityProfiles: [QualityProfile] = []
     @Published private(set) var isLoadingMovies = false
@@ -22,6 +28,11 @@ class LibraryStateManager: ObservableObject {
     @Published private(set) var lastMoviesRefresh: Date?
     @Published private(set) var lastShowsRefresh: Date?
     @Published private(set) var lastProfilesRefresh: Date?
+    @Published private(set) var moviesErrorMessage: String?
+    @Published private(set) var showsErrorMessage: String?
+    @Published private(set) var qualityProfilesErrorMessage: String?
+    @Published private(set) var moviesRevision = 0
+    @Published private(set) var tvShowsRevision = 0
 
     // MARK: - Cached Indexes (for O(1) lookups)
 
@@ -306,8 +317,10 @@ class LibraryStateManager: ObservableObject {
         do {
             movies = try await RadarrService.shared.fetchMovies(forceRefresh: forceRefresh)
             lastMoviesRefresh = Date()
+            moviesErrorMessage = nil
         } catch {
             // Keep existing data on error
+            moviesErrorMessage = userFacingLoadError(service: "Radarr", error: error)
         }
 
         isLoadingMovies = false
@@ -327,8 +340,10 @@ class LibraryStateManager: ObservableObject {
         do {
             tvShows = try await SonarrService.shared.fetchShows(forceRefresh: forceRefresh)
             lastShowsRefresh = Date()
+            showsErrorMessage = nil
         } catch {
             // Keep existing data on error
+            showsErrorMessage = userFacingLoadError(service: "Sonarr", error: error)
         }
 
         isLoadingShows = false
@@ -342,8 +357,10 @@ class LibraryStateManager: ObservableObject {
         do {
             qualityProfiles = try await SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
             lastProfilesRefresh = Date()
+            qualityProfilesErrorMessage = nil
         } catch {
             // Keep existing data on error
+            qualityProfilesErrorMessage = userFacingLoadError(service: "Sonarr", error: error)
         }
 
         isLoadingProfiles = false
@@ -396,5 +413,13 @@ class LibraryStateManager: ObservableObject {
     /// Remove a show from local state
     func removeShowLocally(id: Int) {
         tvShows.removeAll { $0.id == id }
+    }
+
+    private func userFacingLoadError(service: String, error: Error) -> String {
+        let message = error.localizedDescription
+        if message.isEmpty {
+            return "Could not reach \(service). Check your server URL, API key, and network connection."
+        }
+        return "\(service): \(message)"
     }
 }

@@ -85,6 +85,22 @@ struct DiscoverView: View {
                             .font(AppTypography.subheadline())
                             .foregroundColor(ColorPalette.textMutedDark)
                     }
+                } else if let errorMessage, !hasDataToDisplay {
+                    PlaceholderView(
+                        icon: "wifi.exclamationmark",
+                        title: "Couldn't Load Discover",
+                        description: errorMessage,
+                        action: PlaceholderView.ActionConfig(
+                            title: "Try Again",
+                            icon: "arrow.clockwise",
+                            handler: {
+                                Task {
+                                    await loadData(forceRefresh: true)
+                                    hasLoadedInitialData = true
+                                }
+                            }
+                        )
+                    )
                 } else {
                     #if os(tvOS)
                     VStack(spacing: 0) {
@@ -367,9 +383,11 @@ struct DiscoverView: View {
                 }
             }
         } catch {
-            #if DEBUG
-            print("Error loading discover movies: \(error)")
-            #endif
+            await MainActor.run {
+                if !hasDataToDisplay {
+                    errorMessage = "Failed to load movies from TMDB: \(error.localizedDescription)"
+                }
+            }
         }
     }
 
@@ -391,9 +409,11 @@ struct DiscoverView: View {
                 }
             }
         } catch {
-            #if DEBUG
-            print("Error loading discover TV shows: \(error)")
-            #endif
+            await MainActor.run {
+                if !hasDataToDisplay {
+                    errorMessage = "Failed to load TV shows from TMDB: \(error.localizedDescription)"
+                }
+            }
         }
     }
 }

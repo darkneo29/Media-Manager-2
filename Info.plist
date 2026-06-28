@@ -15,22 +15,27 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Dragon Media Manager needs to access your local network to communicate with Radarr, Sonarr, and SabNZB servers running on your home network.</string>
-	<key>NSBonjourServices</key>
+	<key>CFBundleURLTypes</key>
 	<array>
-		<string>_http._tcp</string>
-		<string>_https._tcp</string>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.mediamanager.deeplinks</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>mediamanager</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+		<string>_https._tcp</string>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
