@@ -84,8 +84,9 @@ class SabNZBService {
     // MARK: - Queue Operations
 
     /// Fetches the current download queue from SabNZB
-    func fetchQueue() async throws -> DownloadQueue {
-        guard let url = sabURL(mode: "queue") else {
+    func fetchQueue(limit: Int = 500) async throws -> DownloadQueue {
+        let limitParams = limit > 0 ? [("start", "0"), ("limit", "\(limit)")] : []
+        guard let url = sabURL(mode: "queue", extraParams: limitParams) else {
             throw URLError(.badURL)
         }
 
@@ -104,8 +105,9 @@ class SabNZBService {
     }
 
     /// Fetches the download history from SabNZB
-    func fetchHistory() async throws -> [HistoryDownload] {
-        guard let url = sabURL(mode: "history") else {
+    func fetchHistory(limit: Int = 100) async throws -> [HistoryDownload] {
+        let limitParams = limit > 0 ? [("start", "0"), ("limit", "\(limit)")] : []
+        guard let url = sabURL(mode: "history", extraParams: limitParams) else {
             throw URLError(.badURL)
         }
 
@@ -301,7 +303,7 @@ class SabNZBService {
 
         // Parse speed limit (could be empty, "0", or a number)
         let speedLimit: Int? = {
-            guard let value = Int(queueData.speedlimit), value > 0 else { return nil }
+            guard let value = Int(queueData.speedlimit.trimmingCharacters(in: .whitespacesAndNewlines)), value > 0 else { return nil }
             return value
         }()
 
@@ -314,9 +316,9 @@ class SabNZBService {
         }()
 
         let downloads = queueData.slots.map { slot -> Download in
-            let progress = Double(slot.percentage) ?? 0
-            let totalMB = Double(slot.mb) ?? 0
-            let leftMB = Double(slot.mbleft) ?? 0
+            let progress = min(max(parseSABDouble(slot.percentage), 0), 100)
+            let totalMB = parseSABDouble(slot.mb)
+            let leftMB = parseSABDouble(slot.mbleft)
             let totalBytes = Int64(totalMB * 1024 * 1024)
             let leftBytes = Int64(leftMB * 1024 * 1024)
 
@@ -334,7 +336,7 @@ class SabNZBService {
         }
 
         return DownloadQueue(
-            paused: queueData.paused,
+            paused: queueData.paused || queueData.pausedAll,
             speedLimit: speedLimit,
             speed: speedBytesPerSec,
             downloads: downloads
@@ -356,5 +358,13 @@ class SabNZBService {
                 failMessage: slot.fail_message
             )
         }
+    }
+
+    private func parseSABDouble(_ value: String) -> Double {
+        let normalized = value
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "%", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(normalized) ?? 0
     }
 }

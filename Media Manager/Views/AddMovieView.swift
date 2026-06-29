@@ -16,6 +16,10 @@ struct AddMovieView: View {
     @State private var rootFolders: [RootFolder] = []
     @State private var selectedQualityProfileId: Int = 1
     @State private var selectedRootFolderPath: String = ""
+    @State private var selectedMinimumAvailability: RadarrMinimumAvailability = .released
+    @State private var monitored: Bool = true
+    @State private var selectedTagIds: Set<Int> = []
+    @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
     @State private var optionsErrorMessage: String?
     @State private var searchForMovie: Bool = true
@@ -29,6 +33,10 @@ struct AddMovieView: View {
 
     private var canAddMovie: Bool {
         !isLoadingOptions && optionsErrorMessage == nil && !qualityProfiles.isEmpty && !rootFolders.isEmpty
+    }
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
     }
 
     var body: some View {
@@ -189,6 +197,7 @@ struct AddMovieView: View {
             loadOptions()
         }
         .onDisappear {
+            persistCurrentPreferences()
             if let movie = pendingMovie {
                 pendingMovie = nil
                 navigationPath.append(movie)
@@ -260,6 +269,59 @@ struct AddMovieView: View {
             .background(ColorPalette.cardBackgroundDark)
             .cornerRadius(AppRadius.md)
 
+            // Minimum availability picker
+            HStack {
+                Text("Minimum Availability")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("Minimum Availability", selection: $selectedMinimumAvailability) {
+                    ForEach(RadarrMinimumAvailability.allCases) { availability in
+                        Text(availability.displayName).tag(availability)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            if !tags.isEmpty {
+                TagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
+            // Monitored toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitored")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Let Radarr manage this movie after adding")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $monitored)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
             // Search for movie toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -322,6 +384,24 @@ struct AddMovieView: View {
                 }
             }
 
+            TVAddMoviePickerRow(
+                title: "Minimum Availability",
+                isLoading: isLoadingOptions,
+                selectedLabel: selectedMinimumAvailability.displayName
+            ) {
+                let allCases = RadarrMinimumAvailability.allCases
+                if let currentIndex = allCases.firstIndex(of: selectedMinimumAvailability) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    selectedMinimumAvailability = allCases[nextIndex]
+                }
+            }
+
+            TVAddMovieToggleRow(
+                title: "Monitored",
+                subtitle: "Let Radarr manage this movie after adding",
+                isOn: $monitored
+            )
+
             // Search for movie toggle
             TVAddMovieToggleRow(
                 title: "Search for Movie",
@@ -341,25 +421,27 @@ struct AddMovieView: View {
             do {
                 async let profilesTask = RadarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
                 async let foldersTask = RadarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
+                async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags(forceRefresh: forceRefresh)) ?? []
 
-                let (profiles, folders) = try await (profilesTask, foldersTask)
+                let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
+                    tags = fetchedTags
                     optionsErrorMessage = nil
 
-                    // Select first profile or HD-1080p if available
-                    if let hdProfile = profiles.first(where: { $0.name.contains("1080") || $0.name.contains("HD") }) {
-                        selectedQualityProfileId = hdProfile.id
-                    } else if let first = profiles.first {
-                        selectedQualityProfileId = first.id
-                    }
-
-                    // Select first root folder
-                    if let first = folders.first {
-                        selectedRootFolderPath = first.path
-                    }
+                    let preferences = AddMediaPreferences.shared.radarrSettings(
+                        profiles: profiles,
+                        rootFolders: folders,
+                        tags: fetchedTags
+                    )
+                    selectedQualityProfileId = preferences.qualityProfileId
+                    selectedRootFolderPath = preferences.rootFolderPath
+                    selectedMinimumAvailability = preferences.minimumAvailability
+                    monitored = preferences.monitored
+                    searchForMovie = preferences.searchForMovie
+                    selectedTagIds = Set(preferences.tagIds)
 
                     isLoadingOptions = false
                 }
@@ -456,11 +538,15 @@ struct AddMovieView: View {
         addingMovieId = movie.tmdbId
         Task {
             do {
+                persistCurrentPreferences()
                 let addedMovie = try await RadarrService.shared.addMovie(
                     movie: movie,
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
-                    searchForMovie: searchForMovie
+                    minimumAvailability: selectedMinimumAvailability,
+                    monitored: monitored,
+                    searchForMovie: searchForMovie,
+                    tagIds: selectedTagIds.sorted()
                 )
                 await MainActor.run {
                     LibraryStateManager.shared.addMovieLocally(addedMovie)
@@ -474,6 +560,19 @@ struct AddMovieView: View {
                 }
             }
         }
+    }
+
+    private func persistCurrentPreferences() {
+        guard !isLoadingOptions, !qualityProfiles.isEmpty, !rootFolders.isEmpty else { return }
+        let settings = RadarrAddSettings(
+            qualityProfileId: selectedQualityProfileId,
+            rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
+            minimumAvailability: selectedMinimumAvailability,
+            monitored: monitored,
+            searchForMovie: searchForMovie,
+            tagIds: selectedTagIds.sorted()
+        )
+        AddMediaPreferences.shared.saveRadarr(settings)
     }
 
     private func optionErrorBanner(message: String, retry: @escaping () -> Void) -> some View {
@@ -497,6 +596,81 @@ struct AddMovieView: View {
         .cornerRadius(AppRadius.md)
         .padding(.horizontal, AppSpacing.md)
         .padding(.bottom, AppSpacing.sm)
+    }
+}
+
+func tagSummary(selectedTagIds: Set<Int>, tags: [MediaTag]) -> String {
+    let selectedLabels = tags
+        .filter { selectedTagIds.contains($0.id) }
+        .map(\.label)
+
+    guard !selectedLabels.isEmpty else {
+        return "None"
+    }
+
+    if selectedLabels.count <= 2 {
+        return selectedLabels.joined(separator: ", ")
+    }
+
+    return "\(selectedLabels.count) Tags"
+}
+
+struct TagSelectionMenuRow: View {
+    let title: String
+    let selectedLabel: String
+    let tags: [MediaTag]
+    @Binding var selectedTagIds: Set<Int>
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(AppTypography.subheadline())
+                .foregroundColor(ColorPalette.textPrimaryDark)
+
+            Spacer()
+
+            Menu {
+                ForEach(tags) { tag in
+                    Button {
+                        toggle(tag.id)
+                    } label: {
+                        HStack {
+                            Text(tag.label)
+                            if selectedTagIds.contains(tag.id) {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+
+                if !selectedTagIds.isEmpty {
+                    Divider()
+                    Button("Clear Tags") {
+                        selectedTagIds.removeAll()
+                    }
+                }
+            } label: {
+                HStack(spacing: AppSpacing.xxs) {
+                    Text(selectedLabel)
+                        .lineLimit(1)
+                    Image(systemName: "tag")
+                }
+                .font(AppTypography.subheadline())
+                .foregroundColor(ColorPalette.secondary)
+            }
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.vertical, AppSpacing.sm)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.md)
+    }
+
+    private func toggle(_ id: Int) {
+        if selectedTagIds.contains(id) {
+            selectedTagIds.remove(id)
+        } else {
+            selectedTagIds.insert(id)
+        }
     }
 }
 

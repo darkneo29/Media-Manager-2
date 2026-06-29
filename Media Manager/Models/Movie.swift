@@ -6,6 +6,27 @@ struct MovieImage: Codable, Hashable {
     let remoteUrl: String?
 }
 
+struct MediaTag: Codable, Identifiable, Hashable {
+    let id: Int
+    let label: String
+}
+
+enum RadarrMinimumAvailability: String, CaseIterable, Codable, Identifiable {
+    case announced
+    case inCinemas
+    case released
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .announced: return "Announced"
+        case .inCinemas: return "In Cinemas"
+        case .released: return "Released"
+        }
+    }
+}
+
 struct Movie: Codable, Identifiable, Hashable {
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -33,6 +54,10 @@ struct Movie: Codable, Identifiable, Hashable {
     var digitalRelease: String?
     var physicalRelease: String?
     var inCinemas: String?
+    var minimumAvailability: String?
+    var rootFolderPath: String?
+    var path: String?
+    var tags: [Int]?
 
     init(
         id: Int,
@@ -48,7 +73,11 @@ struct Movie: Codable, Identifiable, Hashable {
         added: String? = nil,
         digitalRelease: String? = nil,
         physicalRelease: String? = nil,
-        inCinemas: String? = nil
+        inCinemas: String? = nil,
+        minimumAvailability: String? = nil,
+        rootFolderPath: String? = nil,
+        path: String? = nil,
+        tags: [Int]? = nil
     ) {
         self.id = id
         self.title = title
@@ -64,6 +93,10 @@ struct Movie: Codable, Identifiable, Hashable {
         self.digitalRelease = digitalRelease
         self.physicalRelease = physicalRelease
         self.inCinemas = inCinemas
+        self.minimumAvailability = minimumAvailability
+        self.rootFolderPath = rootFolderPath
+        self.path = path
+        self.tags = tags
     }
 
     /// Parse added date string to Date
@@ -78,6 +111,11 @@ struct Movie: Codable, Identifiable, Hashable {
     /// Check if movie is coming soon (not yet released)
     var isComingSoon: Bool {
         status == "announced" || status == "inCinemas"
+    }
+
+    var minimumAvailabilityDisplayName: String? {
+        guard let minimumAvailability else { return nil }
+        return RadarrMinimumAvailability(rawValue: minimumAvailability)?.displayName ?? minimumAvailability.capitalized
     }
 
 }

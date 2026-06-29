@@ -6,8 +6,13 @@ struct EditTVShowView: View {
 
     @State private var monitored: Bool
     @State private var selectedQualityProfileId: Int
+    @State private var seriesType: SonarrSeriesType
+    @State private var monitorNewItems: SonarrNewItemMonitor
+    @State private var seasonFolder: Bool
+    @State private var selectedTagIds: Set<Int>
     @State private var qualityProfiles: [QualityProfile] = []
-    @State private var isLoadingProfiles = true
+    @State private var tags: [MediaTag] = []
+    @State private var isLoadingOptions = true
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -15,6 +20,14 @@ struct EditTVShowView: View {
         self.show = show
         _monitored = State(initialValue: show.monitored)
         _selectedQualityProfileId = State(initialValue: show.qualityProfileId)
+        _seriesType = State(initialValue: SonarrSeriesType(rawValue: show.seriesType ?? "") ?? .standard)
+        _monitorNewItems = State(initialValue: SonarrNewItemMonitor(rawValue: show.monitorNewItems ?? "") ?? .all)
+        _seasonFolder = State(initialValue: show.seasonFolder ?? true)
+        _selectedTagIds = State(initialValue: Set(show.tags ?? []))
+    }
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
     }
 
     var body: some View {
@@ -67,7 +80,7 @@ struct EditTVShowView: View {
 
                                 Spacer()
 
-                                if isLoadingProfiles {
+                                if isLoadingOptions {
                                     ProgressView()
                                         .scaleEffect(0.8)
                                         .tint(ColorPalette.secondary)
@@ -94,6 +107,69 @@ struct EditTVShowView: View {
                                 .font(AppTypography.caption2())
                                 .foregroundColor(ColorPalette.textMutedDark)
                                 .padding(.horizontal, AppSpacing.md)
+
+                            HStack {
+                                Text("Series Type")
+                                    .font(AppTypography.body())
+                                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                                Spacer()
+
+                                Picker("Series Type", selection: $seriesType) {
+                                    ForEach(SonarrSeriesType.allCases) { type in
+                                        Text(type.displayName).tag(type)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .tint(ColorPalette.secondary)
+                                .disabled(isLoadingOptions)
+                            }
+                            .padding(.vertical, AppSpacing.sm)
+                            .padding(.horizontal, AppSpacing.md)
+                            .background(ColorPalette.cardBackgroundDark)
+                            .cornerRadius(AppRadius.md)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.md)
+                                    .stroke(ColorPalette.divider, lineWidth: 1)
+                            )
+
+                            HStack {
+                                Text("New Episodes")
+                                    .font(AppTypography.body())
+                                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                                Spacer()
+
+                                Picker("New Episodes", selection: $monitorNewItems) {
+                                    ForEach(SonarrNewItemMonitor.allCases) { option in
+                                        Text(option.displayName).tag(option)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .tint(ColorPalette.secondary)
+                                .disabled(isLoadingOptions)
+                            }
+                            .padding(.vertical, AppSpacing.sm)
+                            .padding(.horizontal, AppSpacing.md)
+                            .background(ColorPalette.cardBackgroundDark)
+                            .cornerRadius(AppRadius.md)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.md)
+                                    .stroke(ColorPalette.divider, lineWidth: 1)
+                            )
+
+                            if !tags.isEmpty {
+                                TagSelectionMenuRow(
+                                    title: "Tags",
+                                    selectedLabel: selectedTagSummary,
+                                    tags: tags,
+                                    selectedTagIds: $selectedTagIds
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.md)
+                                        .stroke(ColorPalette.divider, lineWidth: 1)
+                                )
+                            }
                         }
                         .padding(.horizontal, AppSpacing.md)
 
@@ -134,6 +210,32 @@ struct EditTVShowView: View {
                                 .font(AppTypography.caption2())
                                 .foregroundColor(ColorPalette.textMutedDark)
                                 .padding(.horizontal, AppSpacing.md)
+
+                            HStack {
+                                Label {
+                                    Text("Season Folders")
+                                        .font(AppTypography.body())
+                                        .foregroundColor(ColorPalette.textPrimaryDark)
+                                } icon: {
+                                    Image(systemName: "folder")
+                                        .foregroundColor(ColorPalette.secondary)
+                                        .frame(width: 28)
+                                }
+
+                                Spacer()
+
+                                Toggle("", isOn: $seasonFolder)
+                                    .tint(ColorPalette.primary)
+                                    .labelsHidden()
+                            }
+                            .padding(.vertical, AppSpacing.sm)
+                            .padding(.horizontal, AppSpacing.md)
+                            .background(ColorPalette.cardBackgroundDark)
+                            .cornerRadius(AppRadius.md)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.md)
+                                    .stroke(ColorPalette.divider, lineWidth: 1)
+                            )
                         }
                         .padding(.horizontal, AppSpacing.md)
 
@@ -172,29 +274,33 @@ struct EditTVShowView: View {
                     }
                     .fontWeight(.semibold)
                     .foregroundColor(ColorPalette.secondary)
-                    .disabled(isSaving || isLoadingProfiles)
+                    .disabled(isSaving || isLoadingOptions)
                     .opacity(isSaving ? 0.5 : 1)
                 }
             }
             .onAppear {
-                loadQualityProfiles()
+                loadOptions()
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 
-    private func loadQualityProfiles() {
+    private func loadOptions() {
         Task {
             do {
-                let profiles = try await SonarrService.shared.fetchQualityProfiles()
+                async let profilesTask = SonarrService.shared.fetchQualityProfiles()
+                async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags()) ?? []
+                let (profiles, fetchedTags) = try await (profilesTask, tagsTask)
                 await MainActor.run {
                     qualityProfiles = profiles
-                    isLoadingProfiles = false
+                    tags = fetchedTags
+                    selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    isLoadingOptions = false
                 }
             } catch {
                 await MainActor.run {
-                    isLoadingProfiles = false
+                    isLoadingOptions = false
                 }
             }
         }
@@ -207,6 +313,10 @@ struct EditTVShowView: View {
         var updatedShow = show
         updatedShow.monitored = monitored
         updatedShow.qualityProfileId = selectedQualityProfileId
+        updatedShow.seriesType = seriesType.rawValue
+        updatedShow.monitorNewItems = monitorNewItems.rawValue
+        updatedShow.seasonFolder = seasonFolder
+        updatedShow.tags = selectedTagIds.sorted()
 
         Task {
             do {

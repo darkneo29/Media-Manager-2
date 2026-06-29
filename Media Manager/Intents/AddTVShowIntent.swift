@@ -4,16 +4,30 @@ import Foundation
 /// Monitor option enum for App Intents
 enum TVShowMonitorOption: String, AppEnum {
     case all
+    case future
+    case missing
+    case existing
     case firstSeason
-    case latestSeason
+    case lastSeason
+    case pilot
+    case recent
+    case monitorSpecials
+    case unmonitorSpecials
     case none
 
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Monitor Option"
 
     static var caseDisplayRepresentations: [TVShowMonitorOption: DisplayRepresentation] = [
         .all: DisplayRepresentation(title: "All Seasons", subtitle: "Monitor all seasons and episodes"),
+        .future: DisplayRepresentation(title: "Future Episodes", subtitle: "Only monitor episodes that have not aired yet"),
+        .missing: DisplayRepresentation(title: "Missing Episodes", subtitle: "Monitor episodes that are missing files"),
+        .existing: DisplayRepresentation(title: "Existing Episodes", subtitle: "Monitor episodes that already have files"),
         .firstSeason: DisplayRepresentation(title: "First Season", subtitle: "Only monitor the first season"),
-        .latestSeason: DisplayRepresentation(title: "Latest Season", subtitle: "Only monitor the most recent season"),
+        .lastSeason: DisplayRepresentation(title: "Latest Season", subtitle: "Only monitor the most recent season"),
+        .pilot: DisplayRepresentation(title: "Pilot Only", subtitle: "Only monitor the pilot episode"),
+        .recent: DisplayRepresentation(title: "Recent Episodes", subtitle: "Monitor recently aired episodes"),
+        .monitorSpecials: DisplayRepresentation(title: "Monitor Specials", subtitle: "Monitor specials too"),
+        .unmonitorSpecials: DisplayRepresentation(title: "Skip Specials", subtitle: "Leave specials unmonitored"),
         .none: DisplayRepresentation(title: "None", subtitle: "Don't monitor any episodes")
     ]
 
@@ -21,8 +35,15 @@ enum TVShowMonitorOption: String, AppEnum {
     var toMonitorOption: MonitorOption {
         switch self {
         case .all: return .all
+        case .future: return .future
+        case .missing: return .missing
+        case .existing: return .existing
         case .firstSeason: return .firstSeason
-        case .latestSeason: return .latestSeason
+        case .lastSeason: return .lastSeason
+        case .pilot: return .pilot
+        case .recent: return .recent
+        case .monitorSpecials: return .monitorSpecials
+        case .unmonitorSpecials: return .unmonitorSpecials
         case .none: return .none
         }
     }
@@ -111,29 +132,29 @@ struct AddTVShowIntent: AppIntent {
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
-
-            // Select best quality profile (prefer HD/720p/1080p combo or id 6)
-            let qualityProfileId: Int
-            if let hdProfile = qualityProfiles.first(where: { $0.id == 6 || $0.name.contains("720p/1080p") }) {
-                qualityProfileId = hdProfile.id
-            } else if let hdProfile = qualityProfiles.first(where: { $0.name.contains("HD") || $0.name.contains("1080") }) {
-                qualityProfileId = hdProfile.id
-            } else if let first = qualityProfiles.first {
-                qualityProfileId = first.id
-            } else {
-                qualityProfileId = 1
-            }
-
-            // Select first root folder
-            let rootFolderPath = rootFolders.first?.path ?? "/tv/"
+            let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+            var preferences = AddMediaPreferences.shared.sonarrSettings(
+                profiles: qualityProfiles,
+                rootFolders: rootFolders,
+                tags: tags
+            )
+            preferences.monitorOption = monitorOption.toMonitorOption
+            preferences.searchForMissingEpisodes = searchForEpisodes
+            AddMediaPreferences.shared.saveSonarr(preferences)
 
             // Add the TV show
             let addedShow = try await SonarrService.shared.addShow(
                 show: selectedShow,
-                monitorOption: monitorOption.toMonitorOption,
-                qualityProfileId: qualityProfileId,
-                rootFolderPath: rootFolderPath,
-                searchForMissingEpisodes: searchForEpisodes
+                monitorOption: preferences.monitorOption,
+                qualityProfileId: preferences.qualityProfileId,
+                rootFolderPath: preferences.rootFolderPath,
+                monitored: preferences.monitored,
+                monitorNewItems: preferences.monitorNewItems,
+                seriesType: preferences.seriesType,
+                seasonFolder: preferences.seasonFolder,
+                searchForMissingEpisodes: preferences.searchForMissingEpisodes,
+                searchForCutoffUnmetEpisodes: preferences.searchForCutoffUnmetEpisodes,
+                tagIds: preferences.tagIds
             )
 
             let searchStatus = searchForEpisodes ? " and started searching for episodes" : ""
@@ -203,18 +224,25 @@ struct QuickAddTVShowIntent: AppIntent {
             // Get defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
-
-            let qualityProfileId = qualityProfiles.first(where: { $0.id == 6 || $0.name.contains("720p/1080p") })?.id
-                ?? qualityProfiles.first(where: { $0.name.contains("HD") })?.id
-                ?? qualityProfiles.first?.id ?? 1
-            let rootFolderPath = rootFolders.first?.path ?? "/tv/"
+            let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+            let preferences = AddMediaPreferences.shared.sonarrSettings(
+                profiles: qualityProfiles,
+                rootFolders: rootFolders,
+                tags: tags
+            )
 
             let addedShow = try await SonarrService.shared.addShow(
                 show: firstResult,
-                monitorOption: .all,
-                qualityProfileId: qualityProfileId,
-                rootFolderPath: rootFolderPath,
-                searchForMissingEpisodes: true
+                monitorOption: preferences.monitorOption,
+                qualityProfileId: preferences.qualityProfileId,
+                rootFolderPath: preferences.rootFolderPath,
+                monitored: preferences.monitored,
+                monitorNewItems: preferences.monitorNewItems,
+                seriesType: preferences.seriesType,
+                seasonFolder: preferences.seasonFolder,
+                searchForMissingEpisodes: preferences.searchForMissingEpisodes,
+                searchForCutoffUnmetEpisodes: preferences.searchForCutoffUnmetEpisodes,
+                tagIds: preferences.tagIds
             )
 
             return .result(

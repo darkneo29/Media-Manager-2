@@ -215,7 +215,13 @@ class SonarrService {
         monitorOption: MonitorOption = .all,
         qualityProfileId: Int = 1,
         rootFolderPath: String = "/tv/",
-        searchForMissingEpisodes: Bool = true
+        monitored: Bool = true,
+        monitorNewItems: SonarrNewItemMonitor = .all,
+        seriesType: SonarrSeriesType = .standard,
+        seasonFolder: Bool = true,
+        searchForMissingEpisodes: Bool = true,
+        searchForCutoffUnmetEpisodes: Bool = false,
+        tagIds: [Int] = []
     ) async throws -> TVShow {
         guard let url = URL(string: "\(baseURL)/series") else {
             throw URLError(.badURL)
@@ -230,12 +236,15 @@ class SonarrService {
             "tvdbId": show.tvdbId,
             "year": show.year,
             "rootFolderPath": rootFolderPath,
-            "monitored": true,
-            "monitorNewItems": "all",
+            "monitored": monitored,
+            "monitorNewItems": monitorNewItems.rawValue,
+            "seriesType": seriesType.rawValue,
+            "seasonFolder": seasonFolder,
+            "tags": tagIds,
             "addOptions": [
                 "monitor": monitorOption.rawValue,
                 "searchForMissingEpisodes": searchForMissingEpisodes,
-                "searchForCutoffUnmetEpisodes": false
+                "searchForCutoffUnmetEpisodes": searchForCutoffUnmetEpisodes
             ]
         ]
 
@@ -295,6 +304,18 @@ class SonarrService {
         // Update only the fields we want to change
         showDict["monitored"] = show.monitored
         showDict["qualityProfileId"] = show.qualityProfileId
+        if let seriesType = show.seriesType {
+            showDict["seriesType"] = seriesType
+        }
+        if let seasonFolder = show.seasonFolder {
+            showDict["seasonFolder"] = seasonFolder
+        }
+        if let monitorNewItems = show.monitorNewItems {
+            showDict["monitorNewItems"] = monitorNewItems
+        }
+        if let tags = show.tags {
+            showDict["tags"] = tags
+        }
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: showDict)
@@ -528,6 +549,41 @@ class SonarrService {
 
         let folders = try JSONDecoder().decode([SonarrRootFolder].self, from: data)
         return folders
+    }
+
+    // MARK: - Tags
+
+    /// Fetches tags with caching
+    func fetchTags(forceRefresh: Bool = false) async throws -> [MediaTag] {
+        let cacheKey = CacheManager.CacheKey.sonarrTags
+
+        if forceRefresh {
+            await CacheManager.shared.remove(cacheKey)
+        }
+
+        return try await CacheManager.shared.fetchWithCache(
+            key: cacheKey,
+            ttl: CacheManager.TTL.qualityProfiles,
+            bypassInFlight: forceRefresh
+        ) {
+            try await self.fetchTagsFromAPI()
+        }
+    }
+
+    private func fetchTagsFromAPI() async throws -> [MediaTag] {
+        guard let url = URL(string: "\(baseURL)/tag") else {
+            throw URLError(.badURL)
+        }
+
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode([MediaTag].self, from: data)
     }
 
     // MARK: - Episodes

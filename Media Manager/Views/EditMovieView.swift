@@ -6,8 +6,11 @@ struct EditMovieView: View {
 
     @State private var monitored: Bool
     @State private var selectedQualityProfileId: Int
+    @State private var selectedMinimumAvailability: RadarrMinimumAvailability
+    @State private var selectedTagIds: Set<Int>
     @State private var qualityProfiles: [RadarrQualityProfile] = []
-    @State private var isLoadingProfiles = true
+    @State private var tags: [MediaTag] = []
+    @State private var isLoadingOptions = true
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -15,6 +18,12 @@ struct EditMovieView: View {
         self.movie = movie
         _monitored = State(initialValue: movie.monitored)
         _selectedQualityProfileId = State(initialValue: movie.qualityProfileId ?? 1)
+        _selectedMinimumAvailability = State(initialValue: RadarrMinimumAvailability(rawValue: movie.minimumAvailability ?? "") ?? .released)
+        _selectedTagIds = State(initialValue: Set(movie.tags ?? []))
+    }
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
     }
 
     var body: some View {
@@ -51,7 +60,7 @@ struct EditMovieView: View {
 
                                 Spacer()
 
-                                if isLoadingProfiles {
+                                if isLoadingOptions {
                                     ProgressView()
                                         .scaleEffect(0.8)
                                         .tint(ColorPalette.secondary)
@@ -78,6 +87,44 @@ struct EditMovieView: View {
                                 .font(AppTypography.caption2())
                                 .foregroundColor(ColorPalette.textMutedDark)
                                 .padding(.horizontal, AppSpacing.md)
+
+                            HStack {
+                                Text("Minimum Availability")
+                                    .font(AppTypography.body())
+                                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                                Spacer()
+
+                                Picker("Minimum Availability", selection: $selectedMinimumAvailability) {
+                                    ForEach(RadarrMinimumAvailability.allCases) { availability in
+                                        Text(availability.displayName).tag(availability)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .tint(ColorPalette.secondary)
+                                .disabled(isLoadingOptions)
+                            }
+                            .padding(.vertical, AppSpacing.sm)
+                            .padding(.horizontal, AppSpacing.md)
+                            .background(ColorPalette.cardBackgroundDark)
+                            .cornerRadius(AppRadius.md)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppRadius.md)
+                                    .stroke(ColorPalette.divider, lineWidth: 1)
+                            )
+
+                            if !tags.isEmpty {
+                                TagSelectionMenuRow(
+                                    title: "Tags",
+                                    selectedLabel: selectedTagSummary,
+                                    tags: tags,
+                                    selectedTagIds: $selectedTagIds
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.md)
+                                        .stroke(ColorPalette.divider, lineWidth: 1)
+                                )
+                            }
                         }
                         .padding(.horizontal, AppSpacing.md)
 
@@ -161,24 +208,28 @@ struct EditMovieView: View {
                 }
             }
             .onAppear {
-                loadQualityProfiles()
+                loadOptions()
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
     }
 
-    private func loadQualityProfiles() {
+    private func loadOptions() {
         Task {
             do {
-                let profiles = try await RadarrService.shared.fetchQualityProfiles()
+                async let profilesTask = RadarrService.shared.fetchQualityProfiles()
+                async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags()) ?? []
+                let (profiles, fetchedTags) = try await (profilesTask, tagsTask)
                 await MainActor.run {
                     qualityProfiles = profiles
-                    isLoadingProfiles = false
+                    tags = fetchedTags
+                    selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    isLoadingOptions = false
                 }
             } catch {
                 await MainActor.run {
-                    isLoadingProfiles = false
+                    isLoadingOptions = false
                 }
             }
         }
@@ -202,7 +253,11 @@ struct EditMovieView: View {
             added: movie.added,
             digitalRelease: movie.digitalRelease,
             physicalRelease: movie.physicalRelease,
-            inCinemas: movie.inCinemas
+            inCinemas: movie.inCinemas,
+            minimumAvailability: selectedMinimumAvailability.rawValue,
+            rootFolderPath: movie.rootFolderPath,
+            path: movie.path,
+            tags: selectedTagIds.sorted()
         )
 
         Task {

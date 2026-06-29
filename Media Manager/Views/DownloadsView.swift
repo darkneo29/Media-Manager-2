@@ -10,8 +10,10 @@ struct DownloadsView: View {
     @State private var historyDownloads: [HistoryDownload] = []
     @State private var isQueuePaused = false
     @State private var currentSpeed: Int64 = 0
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @State private var isLoadingQueue = false
+    @State private var isLoadingHistory = false
+    @State private var queueErrorMessage: String?
+    @State private var historyErrorMessage: String?
     @State private var showClearHistoryAlert = false
     // refreshTimer removed - using .task modifier instead
 
@@ -52,6 +54,34 @@ struct DownloadsView: View {
 
     private var totalActivityCount: Int {
         radarrQueue.count + sonarrQueue.count
+    }
+
+    private var canRefreshSelectedTab: Bool {
+        switch selectedTab {
+        case 0, 3:
+            return isSabConfigured
+        case 1:
+            return isRadarrConfigured || isSonarrConfigured
+        case 2:
+            return isSonarrConfigured
+        default:
+            return false
+        }
+    }
+
+    private var isRefreshingSelectedTab: Bool {
+        switch selectedTab {
+        case 0:
+            return isLoadingQueue
+        case 1:
+            return isLoadingActivity
+        case 2:
+            return isLoadingWanted
+        case 3:
+            return isLoadingHistory
+        default:
+            return false
+        }
     }
 
     /// Check if we're on tvOS
@@ -121,12 +151,24 @@ struct DownloadsView: View {
             .navigationTitle("Downloads")
             .navBarTitleDisplayMode(.large)
             .toolbar {
-                if selectedTab == 3 && !historyDownloads.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    if selectedTab == 3 && !historyDownloads.isEmpty {
                         Button("Clear All") {
                             showClearHistoryAlert = true
                         }
                         .foregroundColor(ColorPalette.error)
+                    }
+
+                    if canRefreshSelectedTab {
+                        Button {
+                            Task {
+                                await refreshSelectedTab()
+                            }
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .disabled(isRefreshingSelectedTab)
+                        .accessibilityLabel("Refresh Downloads")
                     }
                 }
             }
@@ -147,6 +189,7 @@ struct DownloadsView: View {
                 await refreshQueue()
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled else { return }
                     await throttledRefresh()
                 }
             }
@@ -348,12 +391,12 @@ struct DownloadsView: View {
                 .padding(.horizontal, AppSpacing.md)
                 .padding(.vertical, AppSpacing.sm)
 
-            if isLoading && activeDownloads.isEmpty {
+            if isLoadingQueue && activeDownloads.isEmpty {
                 loadingView
-            } else if let errorMessage, activeDownloads.isEmpty {
+            } else if let queueErrorMessage, activeDownloads.isEmpty {
                 downloadErrorView(
                     title: "Couldn't Load Downloads",
-                    message: errorMessage,
+                    message: queueErrorMessage,
                     retry: {
                         await refreshQueue()
                     }
@@ -379,7 +422,7 @@ struct DownloadsView: View {
                     .padding(.bottom, AppSpacing.xl)
                 }
                 .refreshable {
-                    await throttledRefresh()
+                    await refreshQueue()
                 }
             }
         }
@@ -430,12 +473,12 @@ struct DownloadsView: View {
 
     private var historyView: some View {
         Group {
-            if isLoading && historyDownloads.isEmpty {
+            if isLoadingHistory && historyDownloads.isEmpty {
                 loadingView
-            } else if let errorMessage, historyDownloads.isEmpty {
+            } else if let historyErrorMessage, historyDownloads.isEmpty {
                 downloadErrorView(
                     title: "Couldn't Load History",
-                    message: errorMessage,
+                    message: historyErrorMessage,
                     retry: {
                         await refreshHistory()
                     }
@@ -596,16 +639,16 @@ struct DownloadsView: View {
 
     private func loadData() async {
         guard isSabConfigured else { return }
-        isLoading = true
+        isLoadingQueue = true
         await refreshQueue()
-        isLoading = false
+        isLoadingQueue = false
     }
 
     private func loadHistory() async {
         guard isSabConfigured else { return }
-        isLoading = true
+        isLoadingHistory = true
         await refreshHistory()
-        isLoading = false
+        isLoadingHistory = false
     }
 
     private func loadActivityData() async {
@@ -706,6 +749,22 @@ struct DownloadsView: View {
         }
     }
 
+    private func refreshSelectedTab() async {
+        loadedTabs.insert(selectedTab)
+        switch selectedTab {
+        case 0:
+            await loadData()
+        case 1:
+            await loadActivityData()
+        case 2:
+            await loadWantedData()
+        case 3:
+            await loadHistory()
+        default:
+            break
+        }
+    }
+
     /// Throttled refresh to prevent rapid API calls
     private func throttledRefresh() async {
         if let lastRefresh = lastRefreshTime,
@@ -723,12 +782,12 @@ struct DownloadsView: View {
                 activeDownloads = queue.downloads
                 isQueuePaused = queue.paused
                 currentSpeed = queue.speed
-                errorMessage = nil
+                queueErrorMessage = nil
                 lastRefreshTime = Date()
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load downloads: \(error.localizedDescription)"
+                queueErrorMessage = "Failed to load downloads: \(error.localizedDescription)"
             }
         }
     }
@@ -738,11 +797,11 @@ struct DownloadsView: View {
             let history = try await SabNZBService.shared.fetchHistory()
             await MainActor.run {
                 historyDownloads = history
-                errorMessage = nil
+                historyErrorMessage = nil
             }
         } catch {
             await MainActor.run {
-                errorMessage = "Failed to load history: \(error.localizedDescription)"
+                historyErrorMessage = "Failed to load history: \(error.localizedDescription)"
             }
         }
     }
@@ -757,11 +816,11 @@ struct DownloadsView: View {
                 } else {
                     try await SabNZBService.shared.pauseQueue()
                 }
-                await MainActor.run {
-                    isQueuePaused.toggle()
-                }
+                await refreshQueue()
             } catch {
-                // Handle error silently for now
+                await MainActor.run {
+                    queueErrorMessage = "Failed to update queue: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -776,7 +835,9 @@ struct DownloadsView: View {
                 }
                 await refreshQueue()
             } catch {
-                // Handle error silently for now
+                await MainActor.run {
+                    queueErrorMessage = "Failed to update download: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -785,11 +846,11 @@ struct DownloadsView: View {
         Task {
             do {
                 try await SabNZBService.shared.deleteDownload(id: download.id)
-                await MainActor.run {
-                    activeDownloads.removeAll { $0.id == download.id }
-                }
+                await refreshQueue()
             } catch {
-                // Handle error silently for now
+                await MainActor.run {
+                    queueErrorMessage = "Failed to delete download: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -798,11 +859,11 @@ struct DownloadsView: View {
         Task {
             do {
                 try await SabNZBService.shared.deleteHistoryItem(id: download.id)
-                await MainActor.run {
-                    historyDownloads.removeAll { $0.id == download.id }
-                }
+                await refreshHistory()
             } catch {
-                // Handle error silently for now
+                await MainActor.run {
+                    historyErrorMessage = "Failed to delete history item: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -811,11 +872,11 @@ struct DownloadsView: View {
         Task {
             do {
                 try await SabNZBService.shared.clearHistory()
-                await MainActor.run {
-                    historyDownloads = []
-                }
+                await refreshHistory()
             } catch {
-                // Handle error silently for now
+                await MainActor.run {
+                    historyErrorMessage = "Failed to clear history: \(error.localizedDescription)"
+                }
             }
         }
     }

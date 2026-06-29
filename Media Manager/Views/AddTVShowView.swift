@@ -9,11 +9,18 @@ struct AddTVShowView: View {
     @State private var addingShowId: Int?
     @State private var errorMessage: String?
     @State private var selectedMonitorOption: MonitorOption = .all
+    @State private var monitored: Bool = true
+    @State private var monitorNewItems: SonarrNewItemMonitor = .all
+    @State private var seriesType: SonarrSeriesType = .standard
+    @State private var seasonFolder: Bool = true
     @State private var searchForMissing: Bool = true
+    @State private var searchForCutoffUnmet: Bool = false
     @State private var qualityProfiles: [QualityProfile] = []
     @State private var rootFolders: [SonarrRootFolder] = []
     @State private var selectedQualityProfileId: Int = 6
     @State private var selectedRootFolderPath: String = ""
+    @State private var selectedTagIds: Set<Int> = []
+    @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
     @State private var optionsErrorMessage: String?
 
@@ -26,6 +33,10 @@ struct AddTVShowView: View {
 
     private var canAddShow: Bool {
         !isLoadingOptions && optionsErrorMessage == nil && !qualityProfiles.isEmpty && !rootFolders.isEmpty
+    }
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
     }
 
     var body: some View {
@@ -134,6 +145,28 @@ struct AddTVShowView: View {
                     .background(ColorPalette.cardBackgroundDark)
                     .cornerRadius(AppRadius.md)
 
+                    // Series type picker
+                    HStack {
+                        Text("Series Type")
+                            .font(AppTypography.subheadline())
+                            .foregroundColor(ColorPalette.textPrimaryDark)
+
+                        Spacer()
+
+                        Picker("Series Type", selection: $seriesType) {
+                            ForEach(SonarrSeriesType.allCases) { type in
+                                Text(type.displayName).tag(type)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(ColorPalette.secondary)
+                        .disabled(isLoadingOptions)
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.cardBackgroundDark)
+                    .cornerRadius(AppRadius.md)
+
                     // Monitor option picker
                     HStack {
                         Text("Monitor")
@@ -155,6 +188,81 @@ struct AddTVShowView: View {
                     .background(ColorPalette.cardBackgroundDark)
                     .cornerRadius(AppRadius.md)
 
+                    // Monitor new items picker
+                    HStack {
+                        Text("New Episodes")
+                            .font(AppTypography.subheadline())
+                            .foregroundColor(ColorPalette.textPrimaryDark)
+
+                        Spacer()
+
+                        Picker("New Episodes", selection: $monitorNewItems) {
+                            ForEach(SonarrNewItemMonitor.allCases) { option in
+                                Text(option.displayName).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(ColorPalette.secondary)
+                        .disabled(isLoadingOptions)
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.cardBackgroundDark)
+                    .cornerRadius(AppRadius.md)
+
+                    if !tags.isEmpty {
+                        TagSelectionMenuRow(
+                            title: "Tags",
+                            selectedLabel: selectedTagSummary,
+                            tags: tags,
+                            selectedTagIds: $selectedTagIds
+                        )
+                    }
+
+                    // Monitored toggle
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Monitored")
+                                .font(AppTypography.subheadline())
+                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            Text("Let Sonarr manage this series after adding")
+                                .font(AppTypography.caption2())
+                                .foregroundColor(ColorPalette.textMutedDark)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $monitored)
+                            .tint(ColorPalette.primary)
+                            .labelsHidden()
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.cardBackgroundDark)
+                    .cornerRadius(AppRadius.md)
+
+                    // Season folders toggle
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Season Folders")
+                                .font(AppTypography.subheadline())
+                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            Text("Organize episodes into season folders")
+                                .font(AppTypography.caption2())
+                                .foregroundColor(ColorPalette.textMutedDark)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $seasonFolder)
+                            .tint(ColorPalette.primary)
+                            .labelsHidden()
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.cardBackgroundDark)
+                    .cornerRadius(AppRadius.md)
+
                     // Search for missing toggle
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -169,6 +277,28 @@ struct AddTVShowView: View {
                         Spacer()
 
                         Toggle("", isOn: $searchForMissing)
+                            .tint(ColorPalette.primary)
+                            .labelsHidden()
+                    }
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.cardBackgroundDark)
+                    .cornerRadius(AppRadius.md)
+
+                    // Search for cutoff unmet toggle
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Search Cutoff Unmet")
+                                .font(AppTypography.subheadline())
+                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            Text("Also search monitored episodes below cutoff")
+                                .font(AppTypography.caption2())
+                                .foregroundColor(ColorPalette.textMutedDark)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $searchForCutoffUnmet)
                             .tint(ColorPalette.primary)
                             .labelsHidden()
                     }
@@ -262,6 +392,7 @@ struct AddTVShowView: View {
             loadOptions()
         }
         .onDisappear {
+            persistCurrentPreferences()
             if let show = pendingShow {
                 pendingShow = nil
                 navigationPath.append(show)
@@ -276,25 +407,31 @@ struct AddTVShowView: View {
             do {
                 async let profilesTask = SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
                 async let foldersTask = SonarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
+                async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags(forceRefresh: forceRefresh)) ?? []
 
-                let (profiles, folders) = try await (profilesTask, foldersTask)
+                let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
+                    tags = fetchedTags
                     optionsErrorMessage = nil
 
-                    // Select HD - 720p/1080p by default if available, otherwise first profile
-                    if let hdCombo = profiles.first(where: { $0.id == 6 || $0.name.contains("720p/1080p") }) {
-                        selectedQualityProfileId = hdCombo.id
-                    } else if let first = profiles.first {
-                        selectedQualityProfileId = first.id
-                    }
-
-                    // Select first root folder
-                    if let first = folders.first {
-                        selectedRootFolderPath = first.path
-                    }
+                    let preferences = AddMediaPreferences.shared.sonarrSettings(
+                        profiles: profiles,
+                        rootFolders: folders,
+                        tags: fetchedTags
+                    )
+                    selectedQualityProfileId = preferences.qualityProfileId
+                    selectedRootFolderPath = preferences.rootFolderPath
+                    selectedMonitorOption = preferences.monitorOption
+                    monitored = preferences.monitored
+                    monitorNewItems = preferences.monitorNewItems
+                    seriesType = preferences.seriesType
+                    seasonFolder = preferences.seasonFolder
+                    searchForMissing = preferences.searchForMissingEpisodes
+                    searchForCutoffUnmet = preferences.searchForCutoffUnmetEpisodes
+                    selectedTagIds = Set(preferences.tagIds)
 
                     isLoadingOptions = false
                 }
@@ -374,12 +511,19 @@ struct AddTVShowView: View {
         addingShowId = show.tvdbId
         Task {
             do {
+                persistCurrentPreferences()
                 let addedShow = try await SonarrService.shared.addShow(
                     show: show,
                     monitorOption: selectedMonitorOption,
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/tv/" : selectedRootFolderPath,
-                    searchForMissingEpisodes: searchForMissing
+                    monitored: monitored,
+                    monitorNewItems: monitorNewItems,
+                    seriesType: seriesType,
+                    seasonFolder: seasonFolder,
+                    searchForMissingEpisodes: searchForMissing,
+                    searchForCutoffUnmetEpisodes: searchForCutoffUnmet,
+                    tagIds: selectedTagIds.sorted()
                 )
                 await MainActor.run {
                     LibraryStateManager.shared.addShowLocally(addedShow)
@@ -393,6 +537,23 @@ struct AddTVShowView: View {
                 }
             }
         }
+    }
+
+    private func persistCurrentPreferences() {
+        guard !isLoadingOptions, !qualityProfiles.isEmpty, !rootFolders.isEmpty else { return }
+        let settings = SonarrAddSettings(
+            qualityProfileId: selectedQualityProfileId,
+            rootFolderPath: selectedRootFolderPath.isEmpty ? "/tv/" : selectedRootFolderPath,
+            monitorOption: selectedMonitorOption,
+            monitored: monitored,
+            monitorNewItems: monitorNewItems,
+            seriesType: seriesType,
+            seasonFolder: seasonFolder,
+            searchForMissingEpisodes: searchForMissing,
+            searchForCutoffUnmetEpisodes: searchForCutoffUnmet,
+            tagIds: selectedTagIds.sorted()
+        )
+        AddMediaPreferences.shared.saveSonarr(settings)
     }
 
     private func optionErrorBanner(message: String, retry: @escaping () -> Void) -> some View {

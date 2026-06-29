@@ -25,6 +25,8 @@ struct MovieDetailView: View {
     // Toast state
     @State private var showSearchToast = false
 
+    @State private var tags: [MediaTag] = []
+
     /// Check if we're on tvOS
     private var isTVOS: Bool {
         #if os(tvOS)
@@ -56,6 +58,24 @@ struct MovieDetailView: View {
                 }
                 return RadarrService.shared.imageURL(for: image.url)
             }
+    }
+
+    private var managementLocation: String? {
+        movie.rootFolderPath ?? movie.path
+    }
+
+    private var managementTags: String? {
+        let tagIds = movie.tags ?? []
+        guard !tagIds.isEmpty else { return nil }
+        if tags.isEmpty {
+            return tagIds.map { "#\($0)" }.joined(separator: ", ")
+        }
+        let labels = tags.filter { tagIds.contains($0.id) }.map(\.label)
+        return labels.isEmpty ? nil : labels.joined(separator: ", ")
+    }
+
+    private var hasManagementDetails: Bool {
+        managementLocation != nil || movie.minimumAvailabilityDisplayName != nil || managementTags != nil
     }
 
     var body: some View {
@@ -274,6 +294,25 @@ struct MovieDetailView: View {
                         .padding(.horizontal, AppSpacing.md)
                         #endif
 
+                        if hasManagementDetails {
+                            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                SectionTitle(text: "Management")
+
+                                VStack(spacing: AppSpacing.xs) {
+                                    if let location = managementLocation {
+                                        ManagementInfoRow(label: "Location", value: location, icon: "folder")
+                                    }
+                                    if let availability = movie.minimumAvailabilityDisplayName {
+                                        ManagementInfoRow(label: "Availability", value: availability, icon: "calendar.badge.clock")
+                                    }
+                                    if let managementTags {
+                                        ManagementInfoRow(label: "Tags", value: managementTags, icon: "tag")
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, isTVOS ? TVSizing.contentPadding : AppSpacing.md)
+                        }
+
                         // Files section
                         VStack(alignment: .leading, spacing: isTVOS ? AppSpacing.md : AppSpacing.sm) {
                             SectionTitle(text: "Files")
@@ -444,6 +483,7 @@ struct MovieDetailView: View {
         .task {
             loadMovieFiles()
             loadTrailer()
+            loadTags()
         }
         .toast(
             isShowing: $showSearchToast,
@@ -462,6 +502,16 @@ struct MovieDetailView: View {
             await MainActor.run {
                 trailerURL = url
                 isLoadingTrailer = false
+            }
+        }
+    }
+
+    private func loadTags() {
+        guard !(movie.tags ?? []).isEmpty else { return }
+        Task {
+            let fetchedTags = (try? await RadarrService.shared.fetchTags()) ?? []
+            await MainActor.run {
+                tags = fetchedTags
             }
         }
     }
@@ -599,6 +649,36 @@ struct MetaPill: View {
         .padding(.vertical, AppSpacing.xxs)
         .background(ColorPalette.cardBackgroundDark)
         .cornerRadius(AppRadius.pill)
+    }
+}
+
+struct ManagementInfoRow: View {
+    let label: String
+    let value: String
+    let icon: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(ColorPalette.secondary)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(AppTypography.caption1(.semibold))
+                    .foregroundColor(ColorPalette.textMutedDark)
+                Text(value)
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textSecondaryDark)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+        }
+        .padding(AppSpacing.sm)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.md)
     }
 }
 

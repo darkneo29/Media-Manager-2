@@ -72,26 +72,24 @@ struct AddMovieIntent: AppIntent {
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
-
-            // Select best quality profile (prefer HD/1080p)
-            let qualityProfileId: Int
-            if let hdProfile = qualityProfiles.first(where: { $0.name.contains("1080") || $0.name.contains("HD") }) {
-                qualityProfileId = hdProfile.id
-            } else if let first = qualityProfiles.first {
-                qualityProfileId = first.id
-            } else {
-                qualityProfileId = 1
-            }
-
-            // Select first root folder
-            let rootFolderPath = rootFolders.first?.path ?? "/movies/"
+            let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+            var preferences = AddMediaPreferences.shared.radarrSettings(
+                profiles: qualityProfiles,
+                rootFolders: rootFolders,
+                tags: tags
+            )
+            preferences.searchForMovie = searchForMovie
+            AddMediaPreferences.shared.saveRadarr(preferences)
 
             // Add the movie
             let addedMovie = try await RadarrService.shared.addMovie(
                 movie: selectedMovie,
-                qualityProfileId: qualityProfileId,
-                rootFolderPath: rootFolderPath,
-                searchForMovie: searchForMovie
+                qualityProfileId: preferences.qualityProfileId,
+                rootFolderPath: preferences.rootFolderPath,
+                minimumAvailability: preferences.minimumAvailability,
+                monitored: preferences.monitored,
+                searchForMovie: preferences.searchForMovie,
+                tagIds: preferences.tagIds
             )
 
             let searchStatus = searchForMovie ? " and started searching" : ""
@@ -160,16 +158,21 @@ struct QuickAddMovieIntent: AppIntent {
             // Get defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
-
-            let qualityProfileId = qualityProfiles.first(where: { $0.name.contains("1080") || $0.name.contains("HD") })?.id
-                ?? qualityProfiles.first?.id ?? 1
-            let rootFolderPath = rootFolders.first?.path ?? "/movies/"
+            let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+            let preferences = AddMediaPreferences.shared.radarrSettings(
+                profiles: qualityProfiles,
+                rootFolders: rootFolders,
+                tags: tags
+            )
 
             let addedMovie = try await RadarrService.shared.addMovie(
                 movie: firstResult,
-                qualityProfileId: qualityProfileId,
-                rootFolderPath: rootFolderPath,
-                searchForMovie: true
+                qualityProfileId: preferences.qualityProfileId,
+                rootFolderPath: preferences.rootFolderPath,
+                minimumAvailability: preferences.minimumAvailability,
+                monitored: preferences.monitored,
+                searchForMovie: preferences.searchForMovie,
+                tagIds: preferences.tagIds
             )
 
             return .result(

@@ -9,17 +9,47 @@ struct QualityProfile: Codable, Identifiable, Hashable {
 /// Monitor options for adding TV shows to Sonarr
 enum MonitorOption: String, CaseIterable, Identifiable {
     case all = "all"
+    case future = "future"
+    case missing = "missing"
+    case existing = "existing"
     case firstSeason = "firstSeason"
-    case latestSeason = "latestSeason"
+    case lastSeason = "lastSeason"
+    case pilot = "pilot"
+    case recent = "recent"
+    case monitorSpecials = "monitorSpecials"
+    case unmonitorSpecials = "unmonitorSpecials"
     case none = "none"
+
+    static var allCases: [MonitorOption] {
+        [
+            .all,
+            .future,
+            .missing,
+            .existing,
+            .firstSeason,
+            .lastSeason,
+            .pilot,
+            .recent,
+            .monitorSpecials,
+            .unmonitorSpecials,
+            .none
+        ]
+    }
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .all: return "All Seasons"
+        case .future: return "Future Episodes"
+        case .missing: return "Missing Episodes"
+        case .existing: return "Existing Episodes"
         case .firstSeason: return "First Season Only"
-        case .latestSeason: return "Latest Season"
+        case .lastSeason: return "Latest Season"
+        case .pilot: return "Pilot Only"
+        case .recent: return "Recent Episodes"
+        case .monitorSpecials: return "Monitor Specials"
+        case .unmonitorSpecials: return "Skip Specials"
         case .none: return "None"
         }
     }
@@ -27,9 +57,54 @@ enum MonitorOption: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .all: return "Monitor all seasons and episodes"
+        case .future: return "Only monitor episodes that have not aired yet"
+        case .missing: return "Monitor episodes that are missing files"
+        case .existing: return "Monitor episodes that already have files"
         case .firstSeason: return "Only monitor the first season"
-        case .latestSeason: return "Only monitor the most recent season"
+        case .lastSeason: return "Only monitor the most recent season"
+        case .pilot: return "Only monitor the pilot episode"
+        case .recent: return "Monitor recently aired episodes"
+        case .monitorSpecials: return "Monitor specials as well as regular episodes"
+        case .unmonitorSpecials: return "Monitor regular episodes and leave specials unmonitored"
         case .none: return "Don't monitor any episodes"
+        }
+    }
+
+    static func normalized(rawValue: String?) -> MonitorOption {
+        guard let rawValue else { return .all }
+        if rawValue == "latestSeason" {
+            return .lastSeason
+        }
+        return MonitorOption(rawValue: rawValue) ?? .all
+    }
+}
+
+enum SonarrSeriesType: String, CaseIterable, Codable, Identifiable {
+    case standard
+    case daily
+    case anime
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: return "Standard"
+        case .daily: return "Daily"
+        case .anime: return "Anime"
+        }
+    }
+}
+
+enum SonarrNewItemMonitor: String, CaseIterable, Codable, Identifiable {
+    case all
+    case none
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .all: return "Monitor New Episodes"
+        case .none: return "Ignore New Episodes"
         }
     }
 }
@@ -76,6 +151,12 @@ struct TVShow: Codable, Identifiable, Hashable {
     var added: String?
     var firstAired: String?
     var nextAiring: String?
+    var rootFolderPath: String?
+    var path: String?
+    var seriesType: String?
+    var seasonFolder: Bool?
+    var monitorNewItems: String?
+    var tags: [Int]?
 
     init(
         id: Int,
@@ -91,7 +172,13 @@ struct TVShow: Codable, Identifiable, Hashable {
         tvdbId: Int? = nil,
         added: String? = nil,
         firstAired: String? = nil,
-        nextAiring: String? = nil
+        nextAiring: String? = nil,
+        rootFolderPath: String? = nil,
+        path: String? = nil,
+        seriesType: String? = nil,
+        seasonFolder: Bool? = nil,
+        monitorNewItems: String? = nil,
+        tags: [Int]? = nil
     ) {
         self.id = id
         self.title = title
@@ -107,6 +194,12 @@ struct TVShow: Codable, Identifiable, Hashable {
         self.added = added
         self.firstAired = firstAired
         self.nextAiring = nextAiring
+        self.rootFolderPath = rootFolderPath
+        self.path = path
+        self.seriesType = seriesType
+        self.seasonFolder = seasonFolder
+        self.monitorNewItems = monitorNewItems
+        self.tags = tags
     }
 
     // Convenience computed properties
@@ -137,6 +230,16 @@ struct TVShow: Codable, Identifiable, Hashable {
             return date > Date()
         }
         return false
+    }
+
+    var seriesTypeDisplayName: String? {
+        guard let seriesType else { return nil }
+        return SonarrSeriesType(rawValue: seriesType)?.displayName ?? seriesType.capitalized
+    }
+
+    var monitorNewItemsDisplayName: String? {
+        guard let monitorNewItems else { return nil }
+        return SonarrNewItemMonitor(rawValue: monitorNewItems)?.displayName ?? monitorNewItems.capitalized
     }
 
 }

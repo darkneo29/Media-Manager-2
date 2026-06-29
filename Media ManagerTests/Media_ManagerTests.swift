@@ -254,6 +254,73 @@ struct Media_ManagerTests {
         #expect(!DownloadsPollingPolicy.shouldPoll(isActiveTab: true, scenePhase: .active, isSabConfigured: false))
     }
 
+    @Test
+    func sabQueueResponseDecodesFlexibleActiveDownloadPayloads() throws {
+        let payload = """
+        {
+          "queue": {
+            "paused": "false",
+            "paused_all": 1,
+            "speedlimit": "0",
+            "speed": "12.4 M",
+            "kbpersec": 2048,
+            "slots": [
+              {
+                "nzo_id": "SABnzbd_nzo_abc",
+                "filename": "Movie.Release.2160p",
+                "cat": "movies",
+                "status": "Downloading",
+                "percentage": "52%",
+                "mb": 1024.5,
+                "mbleft": "491.4",
+                "timeleft": "00:05:10"
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(SabNZBQueueResponse.self, from: payload)
+
+        #expect(!response.queue.paused)
+        #expect(response.queue.pausedAll)
+        #expect(response.queue.kbpersec == "2048")
+        #expect(response.queue.slots.first?.nzo_id == "SABnzbd_nzo_abc")
+        #expect(response.queue.slots.first?.percentage == "52%")
+    }
+
+    @Test
+    func sabHistoryResponseDecodesHistoryItemsAndExpandedStatuses() throws {
+        let payload = """
+        {
+          "history": {
+            "slots": [
+              {
+                "nzo_id": "SABnzbd_nzo_done",
+                "name": "Show.Release.S01E01",
+                "category": "tv",
+                "status": "QuickCheck",
+                "size": "1.5 GB",
+                "completed": "1782687000",
+                "download_time": "360",
+                "fail_message": null
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(SabNZBHistoryResponse.self, from: payload)
+        let item = try #require(response.history.slots.first)
+
+        #expect(item.name == "Show.Release.S01E01")
+        #expect(item.category == "tv")
+        #expect(item.bytes == 1_610_612_736)
+        #expect(item.completed == 1_782_687_000)
+        #expect(item.download_time == 360)
+        #expect(DownloadStatus(from: item.status) == .quickCheck)
+    }
+
     private func makeDefaults(suffix: String) -> TestDefaultsStore {
         let suiteName = "MediaManagerTests.\(suffix).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

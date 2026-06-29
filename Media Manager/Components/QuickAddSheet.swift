@@ -19,8 +19,16 @@ struct QuickAddMovieSheet: View {
     @State private var rootFolders: [RootFolder] = []
     @State private var selectedQualityProfileId: Int = 1
     @State private var selectedRootFolderPath: String = ""
+    @State private var selectedMinimumAvailability: RadarrMinimumAvailability = .released
+    @State private var monitored: Bool = true
+    @State private var selectedTagIds: Set<Int> = []
+    @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
     @State private var searchForMovie: Bool = true
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -246,6 +254,59 @@ struct QuickAddMovieSheet: View {
             .background(ColorPalette.cardBackgroundDark)
             .cornerRadius(AppRadius.md)
 
+            // Minimum availability picker
+            HStack {
+                Text("Minimum Availability")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("Minimum Availability", selection: $selectedMinimumAvailability) {
+                    ForEach(RadarrMinimumAvailability.allCases) { availability in
+                        Text(availability.displayName).tag(availability)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            if !tags.isEmpty {
+                TagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
+            // Monitored toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitored")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Let Radarr manage this movie after adding")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $monitored)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
             // Search for movie toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -304,6 +365,24 @@ struct QuickAddMovieSheet: View {
                 }
             }
 
+            QuickAddPickerRow(
+                title: "Minimum Availability",
+                isLoading: isLoadingOptions,
+                selectedLabel: selectedMinimumAvailability.displayName
+            ) {
+                let allCases = RadarrMinimumAvailability.allCases
+                if let currentIndex = allCases.firstIndex(of: selectedMinimumAvailability) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    selectedMinimumAvailability = allCases[nextIndex]
+                }
+            }
+
+            QuickAddToggleRow(
+                title: "Monitored",
+                subtitle: "Let Radarr manage this movie after adding",
+                isOn: $monitored
+            )
+
             // Search for movie toggle
             QuickAddToggleRow(
                 title: "Search for Movie",
@@ -318,24 +397,26 @@ struct QuickAddMovieSheet: View {
         do {
             async let profilesTask = RadarrService.shared.fetchQualityProfiles()
             async let foldersTask = RadarrService.shared.fetchRootFolders()
+            async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags()) ?? []
 
-            let (profiles, folders) = try await (profilesTask, foldersTask)
+            let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
             await MainActor.run {
                 qualityProfiles = profiles
                 rootFolders = folders
+                tags = fetchedTags
 
-                // Select HD profile if available
-                if let hdProfile = profiles.first(where: { $0.name.contains("1080") || $0.name.contains("HD") }) {
-                    selectedQualityProfileId = hdProfile.id
-                } else if let first = profiles.first {
-                    selectedQualityProfileId = first.id
-                }
-
-                // Select first root folder
-                if let first = folders.first {
-                    selectedRootFolderPath = first.path
-                }
+                let preferences = AddMediaPreferences.shared.radarrSettings(
+                    profiles: profiles,
+                    rootFolders: folders,
+                    tags: fetchedTags
+                )
+                selectedQualityProfileId = preferences.qualityProfileId
+                selectedRootFolderPath = preferences.rootFolderPath
+                selectedMinimumAvailability = preferences.minimumAvailability
+                monitored = preferences.monitored
+                searchForMovie = preferences.searchForMovie
+                selectedTagIds = Set(preferences.tagIds)
 
                 isLoadingOptions = false
             }
@@ -368,6 +449,7 @@ struct QuickAddMovieSheet: View {
 
         Task {
             do {
+                persistCurrentPreferences()
                 // Use cached search - the CacheManager will deduplicate if same search is in progress
                 let results = try await RadarrService.shared.searchMovies(term: movie.title)
 
@@ -381,7 +463,10 @@ struct QuickAddMovieSheet: View {
                     movie: movieLookup,
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
-                    searchForMovie: searchForMovie
+                    minimumAvailability: selectedMinimumAvailability,
+                    monitored: monitored,
+                    searchForMovie: searchForMovie,
+                    tagIds: selectedTagIds.sorted()
                 )
 
                 // Update shared library state optimistically
@@ -408,6 +493,19 @@ struct QuickAddMovieSheet: View {
             }
         }
     }
+
+    private func persistCurrentPreferences() {
+        guard !isLoadingOptions, !qualityProfiles.isEmpty, !rootFolders.isEmpty else { return }
+        let settings = RadarrAddSettings(
+            qualityProfileId: selectedQualityProfileId,
+            rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
+            minimumAvailability: selectedMinimumAvailability,
+            monitored: monitored,
+            searchForMovie: searchForMovie,
+            tagIds: selectedTagIds.sorted()
+        )
+        AddMediaPreferences.shared.saveRadarr(settings)
+    }
 }
 
 // MARK: - Quick Add TV Show Sheet
@@ -430,8 +528,19 @@ struct QuickAddTVShowSheet: View {
     @State private var rootFolders: [SonarrRootFolder] = []
     @State private var selectedRootFolderPath: String = ""
     @State private var selectedMonitorOption: MonitorOption = .all
+    @State private var monitored: Bool = true
+    @State private var monitorNewItems: SonarrNewItemMonitor = .all
+    @State private var seriesType: SonarrSeriesType = .standard
+    @State private var seasonFolder: Bool = true
     @State private var searchForMissing: Bool = true
+    @State private var searchForCutoffUnmet: Bool = false
+    @State private var selectedTagIds: Set<Int> = []
+    @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
+
+    private var selectedTagSummary: String {
+        tagSummary(selectedTagIds: selectedTagIds, tags: tags)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -659,6 +768,28 @@ struct QuickAddTVShowSheet: View {
             .background(ColorPalette.cardBackgroundDark)
             .cornerRadius(AppRadius.md)
 
+            // Series type picker
+            HStack {
+                Text("Series Type")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("Series Type", selection: $seriesType) {
+                    ForEach(SonarrSeriesType.allCases) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
             // Monitor option picker
             HStack {
                 Text("Monitor")
@@ -680,6 +811,81 @@ struct QuickAddTVShowSheet: View {
             .background(ColorPalette.cardBackgroundDark)
             .cornerRadius(AppRadius.md)
 
+            // Monitor new items picker
+            HStack {
+                Text("New Episodes")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("New Episodes", selection: $monitorNewItems) {
+                    ForEach(SonarrNewItemMonitor.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            if !tags.isEmpty {
+                TagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
+            // Monitored toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitored")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Let Sonarr manage this series after adding")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $monitored)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Season folders toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Season Folders")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Organize episodes into season folders")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $seasonFolder)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
             // Search for episodes toggle
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -694,6 +900,28 @@ struct QuickAddTVShowSheet: View {
                 Spacer()
 
                 Toggle("", isOn: $searchForMissing)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Search for cutoff unmet toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Search Cutoff Unmet")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Also search monitored episodes below cutoff")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $searchForCutoffUnmet)
                     .tint(ColorPalette.primary)
                     .labelsHidden()
             }
@@ -738,6 +966,18 @@ struct QuickAddTVShowSheet: View {
                 }
             }
 
+            QuickAddPickerRow(
+                title: "Series Type",
+                isLoading: isLoadingOptions,
+                selectedLabel: seriesType.displayName
+            ) {
+                let allCases = SonarrSeriesType.allCases
+                if let currentIndex = allCases.firstIndex(of: seriesType) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    seriesType = allCases[nextIndex]
+                }
+            }
+
             // Monitor option picker
             QuickAddPickerRow(
                 title: "Monitor",
@@ -751,11 +991,41 @@ struct QuickAddTVShowSheet: View {
                 }
             }
 
+            QuickAddPickerRow(
+                title: "New Episodes",
+                isLoading: isLoadingOptions,
+                selectedLabel: monitorNewItems.displayName
+            ) {
+                let allCases = SonarrNewItemMonitor.allCases
+                if let currentIndex = allCases.firstIndex(of: monitorNewItems) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    monitorNewItems = allCases[nextIndex]
+                }
+            }
+
+            QuickAddToggleRow(
+                title: "Monitored",
+                subtitle: "Let Sonarr manage this series after adding",
+                isOn: $monitored
+            )
+
+            QuickAddToggleRow(
+                title: "Season Folders",
+                subtitle: "Organize episodes into season folders",
+                isOn: $seasonFolder
+            )
+
             // Search for episodes toggle
             QuickAddToggleRow(
                 title: "Search for Episodes",
                 subtitle: "Start searching when series is added",
                 isOn: $searchForMissing
+            )
+
+            QuickAddToggleRow(
+                title: "Search Cutoff Unmet",
+                subtitle: "Also search monitored episodes below cutoff",
+                isOn: $searchForCutoffUnmet
             )
         }
     }
@@ -765,21 +1035,29 @@ struct QuickAddTVShowSheet: View {
         do {
             // Load quality profiles and root folders in parallel
             async let foldersTask = SonarrService.shared.fetchRootFolders()
+            async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags()) ?? []
             await libraryState.loadQualityProfiles()
-            let folders = try await foldersTask
+            let (folders, fetchedTags) = try await (foldersTask, tagsTask)
 
             await MainActor.run {
                 rootFolders = folders
+                tags = fetchedTags
 
-                // Set default quality profile
-                if let defaultProfile = libraryState.defaultQualityProfile {
-                    selectedQualityProfileId = defaultProfile.id
-                }
-
-                // Select first root folder
-                if let first = folders.first {
-                    selectedRootFolderPath = first.path
-                }
+                let preferences = AddMediaPreferences.shared.sonarrSettings(
+                    profiles: libraryState.qualityProfiles,
+                    rootFolders: folders,
+                    tags: fetchedTags
+                )
+                selectedQualityProfileId = preferences.qualityProfileId
+                selectedRootFolderPath = preferences.rootFolderPath
+                selectedMonitorOption = preferences.monitorOption
+                monitored = preferences.monitored
+                monitorNewItems = preferences.monitorNewItems
+                seriesType = preferences.seriesType
+                seasonFolder = preferences.seasonFolder
+                searchForMissing = preferences.searchForMissingEpisodes
+                searchForCutoffUnmet = preferences.searchForCutoffUnmetEpisodes
+                selectedTagIds = Set(preferences.tagIds)
 
                 isLoadingOptions = false
             }
@@ -802,7 +1080,7 @@ struct QuickAddTVShowSheet: View {
     }
 
     private func addShow() {
-        guard !isLoadingOptions, libraryState.defaultQualityProfile != nil, !rootFolders.isEmpty else {
+        guard !isLoadingOptions, !libraryState.qualityProfiles.isEmpty, !rootFolders.isEmpty else {
             errorMessage = "Load a quality profile and root folder before adding this show."
             return
         }
@@ -812,6 +1090,7 @@ struct QuickAddTVShowSheet: View {
 
         Task {
             do {
+                persistCurrentPreferences()
                 // Use cached search - the CacheManager will deduplicate if same search is in progress
                 let results = try await SonarrService.shared.searchShows(term: show.name)
 
@@ -835,7 +1114,13 @@ struct QuickAddTVShowSheet: View {
                     monitorOption: selectedMonitorOption,
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/tv/" : selectedRootFolderPath,
-                    searchForMissingEpisodes: searchForMissing
+                    monitored: monitored,
+                    monitorNewItems: monitorNewItems,
+                    seriesType: seriesType,
+                    seasonFolder: seasonFolder,
+                    searchForMissingEpisodes: searchForMissing,
+                    searchForCutoffUnmetEpisodes: searchForCutoffUnmet,
+                    tagIds: selectedTagIds.sorted()
                 )
 
                 // Update shared library state optimistically
@@ -861,6 +1146,23 @@ struct QuickAddTVShowSheet: View {
                 }
             }
         }
+    }
+
+    private func persistCurrentPreferences() {
+        guard !isLoadingOptions, !libraryState.qualityProfiles.isEmpty, !rootFolders.isEmpty else { return }
+        let settings = SonarrAddSettings(
+            qualityProfileId: selectedQualityProfileId,
+            rootFolderPath: selectedRootFolderPath.isEmpty ? "/tv/" : selectedRootFolderPath,
+            monitorOption: selectedMonitorOption,
+            monitored: monitored,
+            monitorNewItems: monitorNewItems,
+            seriesType: seriesType,
+            seasonFolder: seasonFolder,
+            searchForMissingEpisodes: searchForMissing,
+            searchForCutoffUnmetEpisodes: searchForCutoffUnmet,
+            tagIds: selectedTagIds.sorted()
+        )
+        AddMediaPreferences.shared.saveSonarr(settings)
     }
 }
 

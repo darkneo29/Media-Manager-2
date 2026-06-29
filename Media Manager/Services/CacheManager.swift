@@ -170,6 +170,7 @@ actor CacheManager {
         static let radarrMovies = "radarr.movies"
         static let radarrQualityProfiles = "radarr.qualityProfiles"
         static let radarrRootFolders = "radarr.rootFolders"
+        static let radarrTags = "radarr.tags"
         static let radarrQueue = "radarr.queue"
         static func radarrSearch(_ term: String) -> String { "radarr.search.\(term.lowercased())" }
         static func movieFiles(_ movieId: Int) -> String { "radarr.moviefiles.\(movieId)" }
@@ -178,6 +179,7 @@ actor CacheManager {
         static let sonarrShows = "sonarr.shows"
         static let sonarrQualityProfiles = "sonarr.qualityProfiles"
         static let sonarrRootFolders = "sonarr.rootFolders"
+        static let sonarrTags = "sonarr.tags"
         static let sonarrQueue = "sonarr.queue"
         static let sonarrWanted = "sonarr.wanted"
         static func sonarrSearch(_ term: String) -> String { "sonarr.search.\(term.lowercased())" }

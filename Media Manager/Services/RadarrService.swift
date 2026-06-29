@@ -161,7 +161,15 @@ class RadarrService {
     }
 
     @discardableResult
-    func addMovie(movie: MovieLookup, qualityProfileId: Int = 1, rootFolderPath: String = "/movies/", searchForMovie: Bool = true) async throws -> Movie {
+    func addMovie(
+        movie: MovieLookup,
+        qualityProfileId: Int = 1,
+        rootFolderPath: String = "/movies/",
+        minimumAvailability: RadarrMinimumAvailability = .released,
+        monitored: Bool = true,
+        searchForMovie: Bool = true,
+        tagIds: [Int] = []
+    ) async throws -> Movie {
         guard let url = URL(string: "\(baseURL)/movie") else {
             throw URLError(.badURL)
         }
@@ -176,8 +184,11 @@ class RadarrService {
             "tmdbId": movie.tmdbId,
             "year": movie.year,
             "rootFolderPath": rootFolderPath,
-            "monitored": true,
+            "minimumAvailability": minimumAvailability.rawValue,
+            "monitored": monitored,
+            "tags": tagIds,
             "addOptions": [
+                "addMethod": "manual",
                 "searchForMovie": searchForMovie
             ]
         ]
@@ -288,6 +299,12 @@ class RadarrService {
         // Update only the fields we want to change
         movieDict["monitored"] = movie.monitored
         movieDict["qualityProfileId"] = movie.qualityProfileId
+        if let minimumAvailability = movie.minimumAvailability {
+            movieDict["minimumAvailability"] = minimumAvailability
+        }
+        if let tags = movie.tags {
+            movieDict["tags"] = tags
+        }
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: movieDict)
@@ -563,6 +580,41 @@ class RadarrService {
 
         let profiles = try JSONDecoder().decode([RadarrQualityProfile].self, from: data)
         return profiles
+    }
+
+    // MARK: - Tags
+
+    /// Fetches tags with caching
+    func fetchTags(forceRefresh: Bool = false) async throws -> [MediaTag] {
+        let cacheKey = CacheManager.CacheKey.radarrTags
+
+        if forceRefresh {
+            await CacheManager.shared.remove(cacheKey)
+        }
+
+        return try await CacheManager.shared.fetchWithCache(
+            key: cacheKey,
+            ttl: CacheManager.TTL.qualityProfiles,
+            bypassInFlight: forceRefresh
+        ) {
+            try await self.fetchTagsFromAPI()
+        }
+    }
+
+    private func fetchTagsFromAPI() async throws -> [MediaTag] {
+        guard let url = URL(string: "\(baseURL)/tag") else {
+            throw URLError(.badURL)
+        }
+
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        return try JSONDecoder().decode([MediaTag].self, from: data)
     }
 
     // MARK: - Queue (Activity)

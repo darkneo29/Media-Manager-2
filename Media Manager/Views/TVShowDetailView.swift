@@ -36,6 +36,8 @@ struct TVShowDetailView: View {
     // Toast state
     @State private var showSearchToast = false
 
+    @State private var tags: [MediaTag] = []
+
     /// Check if we're on tvOS
     private var isTVOS: Bool {
         #if os(tvOS)
@@ -67,6 +69,28 @@ struct TVShowDetailView: View {
                 }
                 return SonarrService.shared.imageURL(for: image.url)
             }
+    }
+
+    private var managementLocation: String? {
+        show.rootFolderPath ?? show.path
+    }
+
+    private var managementTags: String? {
+        let tagIds = show.tags ?? []
+        guard !tagIds.isEmpty else { return nil }
+        if tags.isEmpty {
+            return tagIds.map { "#\($0)" }.joined(separator: ", ")
+        }
+        let labels = tags.filter { tagIds.contains($0.id) }.map(\.label)
+        return labels.isEmpty ? nil : labels.joined(separator: ", ")
+    }
+
+    private var hasManagementDetails: Bool {
+        managementLocation != nil ||
+        show.seriesTypeDisplayName != nil ||
+        show.monitorNewItemsDisplayName != nil ||
+        show.seasonFolder != nil ||
+        managementTags != nil
     }
 
     /// Group episode files by season
@@ -339,6 +363,31 @@ struct TVShowDetailView: View {
                         .padding(.horizontal, AppSpacing.md)
                         #endif
 
+                        if hasManagementDetails {
+                            VStack(alignment: .leading, spacing: AppSpacing.sm) {
+                                SectionTitle(text: "Management")
+
+                                VStack(spacing: AppSpacing.xs) {
+                                    if let location = managementLocation {
+                                        ManagementInfoRow(label: "Location", value: location, icon: "folder")
+                                    }
+                                    if let seriesType = show.seriesTypeDisplayName {
+                                        ManagementInfoRow(label: "Series Type", value: seriesType, icon: "rectangle.stack")
+                                    }
+                                    if let monitorNewItems = show.monitorNewItemsDisplayName {
+                                        ManagementInfoRow(label: "New Episodes", value: monitorNewItems, icon: "sparkles.tv")
+                                    }
+                                    if let seasonFolder = show.seasonFolder {
+                                        ManagementInfoRow(label: "Season Folders", value: seasonFolder ? "On" : "Off", icon: "folder.badge.gearshape")
+                                    }
+                                    if let managementTags {
+                                        ManagementInfoRow(label: "Tags", value: managementTags, icon: "tag")
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, AppSpacing.md)
+                        }
+
                         // Episodes/Files section
                         VStack(alignment: .leading, spacing: AppSpacing.sm) {
                             // Section header with toggle
@@ -593,6 +642,7 @@ struct TVShowDetailView: View {
             loadEpisodeFiles()
             loadEpisodes()
             loadTrailer()
+            loadTags()
         }
         .toast(
             isShowing: $showSearchToast,
@@ -611,6 +661,16 @@ struct TVShowDetailView: View {
             await MainActor.run {
                 trailerURL = url
                 isLoadingTrailer = false
+            }
+        }
+    }
+
+    private func loadTags() {
+        guard !(show.tags ?? []).isEmpty else { return }
+        Task {
+            let fetchedTags = (try? await SonarrService.shared.fetchTags()) ?? []
+            await MainActor.run {
+                tags = fetchedTags
             }
         }
     }

@@ -197,3 +197,154 @@ final class ConfigurationManager: ObservableObject {
         }
     }
 }
+
+struct RadarrAddSettings {
+    var qualityProfileId: Int
+    var rootFolderPath: String
+    var minimumAvailability: RadarrMinimumAvailability
+    var monitored: Bool
+    var searchForMovie: Bool
+    var tagIds: [Int]
+}
+
+struct SonarrAddSettings {
+    var qualityProfileId: Int
+    var rootFolderPath: String
+    var monitorOption: MonitorOption
+    var monitored: Bool
+    var monitorNewItems: SonarrNewItemMonitor
+    var seriesType: SonarrSeriesType
+    var seasonFolder: Bool
+    var searchForMissingEpisodes: Bool
+    var searchForCutoffUnmetEpisodes: Bool
+    var tagIds: [Int]
+}
+
+@MainActor
+final class AddMediaPreferences {
+    static let shared = AddMediaPreferences()
+
+    private let defaults: UserDefaults
+
+    private enum Keys {
+        static let radarrQualityProfileId = "addPreferences.radarr.qualityProfileId"
+        static let radarrRootFolderPath = "addPreferences.radarr.rootFolderPath"
+        static let radarrMinimumAvailability = "addPreferences.radarr.minimumAvailability"
+        static let radarrMonitored = "addPreferences.radarr.monitored"
+        static let radarrSearchForMovie = "addPreferences.radarr.searchForMovie"
+        static let radarrTagIds = "addPreferences.radarr.tagIds"
+
+        static let sonarrQualityProfileId = "addPreferences.sonarr.qualityProfileId"
+        static let sonarrRootFolderPath = "addPreferences.sonarr.rootFolderPath"
+        static let sonarrMonitorOption = "addPreferences.sonarr.monitorOption"
+        static let sonarrMonitored = "addPreferences.sonarr.monitored"
+        static let sonarrMonitorNewItems = "addPreferences.sonarr.monitorNewItems"
+        static let sonarrSeriesType = "addPreferences.sonarr.seriesType"
+        static let sonarrSeasonFolder = "addPreferences.sonarr.seasonFolder"
+        static let sonarrSearchForMissing = "addPreferences.sonarr.searchForMissing"
+        static let sonarrSearchForCutoffUnmet = "addPreferences.sonarr.searchForCutoffUnmet"
+        static let sonarrTagIds = "addPreferences.sonarr.tagIds"
+    }
+
+    private init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    func radarrSettings(profiles: [RadarrQualityProfile], rootFolders: [RootFolder], tags: [MediaTag]) -> RadarrAddSettings {
+        RadarrAddSettings(
+            qualityProfileId: preferredRadarrQualityProfileId(profiles),
+            rootFolderPath: preferredRadarrRootFolderPath(rootFolders),
+            minimumAvailability: RadarrMinimumAvailability(rawValue: defaults.string(forKey: Keys.radarrMinimumAvailability) ?? "") ?? .released,
+            monitored: bool(for: Keys.radarrMonitored, defaultValue: true),
+            searchForMovie: bool(for: Keys.radarrSearchForMovie, defaultValue: true),
+            tagIds: validatedTagIds(defaults.array(forKey: Keys.radarrTagIds) as? [Int] ?? [], availableTags: tags)
+        )
+    }
+
+    func saveRadarr(_ settings: RadarrAddSettings) {
+        defaults.set(settings.qualityProfileId, forKey: Keys.radarrQualityProfileId)
+        defaults.set(settings.rootFolderPath, forKey: Keys.radarrRootFolderPath)
+        defaults.set(settings.minimumAvailability.rawValue, forKey: Keys.radarrMinimumAvailability)
+        defaults.set(settings.monitored, forKey: Keys.radarrMonitored)
+        defaults.set(settings.searchForMovie, forKey: Keys.radarrSearchForMovie)
+        defaults.set(settings.tagIds.sorted(), forKey: Keys.radarrTagIds)
+    }
+
+    func sonarrSettings(profiles: [QualityProfile], rootFolders: [SonarrRootFolder], tags: [MediaTag]) -> SonarrAddSettings {
+        SonarrAddSettings(
+            qualityProfileId: preferredSonarrQualityProfileId(profiles),
+            rootFolderPath: preferredSonarrRootFolderPath(rootFolders),
+            monitorOption: MonitorOption.normalized(rawValue: defaults.string(forKey: Keys.sonarrMonitorOption)),
+            monitored: bool(for: Keys.sonarrMonitored, defaultValue: true),
+            monitorNewItems: SonarrNewItemMonitor(rawValue: defaults.string(forKey: Keys.sonarrMonitorNewItems) ?? "") ?? .all,
+            seriesType: SonarrSeriesType(rawValue: defaults.string(forKey: Keys.sonarrSeriesType) ?? "") ?? .standard,
+            seasonFolder: bool(for: Keys.sonarrSeasonFolder, defaultValue: true),
+            searchForMissingEpisodes: bool(for: Keys.sonarrSearchForMissing, defaultValue: true),
+            searchForCutoffUnmetEpisodes: bool(for: Keys.sonarrSearchForCutoffUnmet, defaultValue: false),
+            tagIds: validatedTagIds(defaults.array(forKey: Keys.sonarrTagIds) as? [Int] ?? [], availableTags: tags)
+        )
+    }
+
+    func saveSonarr(_ settings: SonarrAddSettings) {
+        defaults.set(settings.qualityProfileId, forKey: Keys.sonarrQualityProfileId)
+        defaults.set(settings.rootFolderPath, forKey: Keys.sonarrRootFolderPath)
+        defaults.set(settings.monitorOption.rawValue, forKey: Keys.sonarrMonitorOption)
+        defaults.set(settings.monitored, forKey: Keys.sonarrMonitored)
+        defaults.set(settings.monitorNewItems.rawValue, forKey: Keys.sonarrMonitorNewItems)
+        defaults.set(settings.seriesType.rawValue, forKey: Keys.sonarrSeriesType)
+        defaults.set(settings.seasonFolder, forKey: Keys.sonarrSeasonFolder)
+        defaults.set(settings.searchForMissingEpisodes, forKey: Keys.sonarrSearchForMissing)
+        defaults.set(settings.searchForCutoffUnmetEpisodes, forKey: Keys.sonarrSearchForCutoffUnmet)
+        defaults.set(settings.tagIds.sorted(), forKey: Keys.sonarrTagIds)
+    }
+
+    private func preferredRadarrQualityProfileId(_ profiles: [RadarrQualityProfile]) -> Int {
+        let saved = defaults.integer(forKey: Keys.radarrQualityProfileId)
+        if saved > 0, profiles.contains(where: { $0.id == saved }) {
+            return saved
+        }
+        return profiles.first(where: { $0.name.localizedCaseInsensitiveContains("1080") || $0.name.localizedCaseInsensitiveContains("HD") })?.id
+            ?? profiles.first?.id
+            ?? 1
+    }
+
+    private func preferredSonarrQualityProfileId(_ profiles: [QualityProfile]) -> Int {
+        let saved = defaults.integer(forKey: Keys.sonarrQualityProfileId)
+        if saved > 0, profiles.contains(where: { $0.id == saved }) {
+            return saved
+        }
+        return profiles.first(where: { $0.id == 6 || $0.name.localizedCaseInsensitiveContains("720p/1080p") })?.id
+            ?? profiles.first(where: { $0.name.localizedCaseInsensitiveContains("HD") || $0.name.localizedCaseInsensitiveContains("1080") })?.id
+            ?? profiles.first?.id
+            ?? 1
+    }
+
+    private func preferredRadarrRootFolderPath(_ rootFolders: [RootFolder]) -> String {
+        let saved = defaults.string(forKey: Keys.radarrRootFolderPath) ?? ""
+        if rootFolders.contains(where: { $0.path == saved }) {
+            return saved
+        }
+        return rootFolders.first?.path ?? "/movies/"
+    }
+
+    private func preferredSonarrRootFolderPath(_ rootFolders: [SonarrRootFolder]) -> String {
+        let saved = defaults.string(forKey: Keys.sonarrRootFolderPath) ?? ""
+        if rootFolders.contains(where: { $0.path == saved }) {
+            return saved
+        }
+        return rootFolders.first?.path ?? "/tv/"
+    }
+
+    private func bool(for key: String, defaultValue: Bool) -> Bool {
+        guard defaults.object(forKey: key) != nil else {
+            return defaultValue
+        }
+        return defaults.bool(forKey: key)
+    }
+
+    private func validatedTagIds(_ tagIds: [Int], availableTags: [MediaTag]) -> [Int] {
+        guard !availableTags.isEmpty else { return [] }
+        let availableIds = Set(availableTags.map(\.id))
+        return tagIds.filter { availableIds.contains($0) }
+    }
+}

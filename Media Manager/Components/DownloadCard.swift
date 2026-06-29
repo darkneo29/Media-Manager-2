@@ -161,7 +161,7 @@ struct DownloadCard: View {
             return ColorPalette.success
         case .failed:
             return ColorPalette.error
-        case .extracting, .verifying, .repairing:
+        case .extracting, .verifying, .repairing, .moving, .running, .quickCheck:
             return ColorPalette.primary
         case .fetching, .propagating:
             return ColorPalette.info
@@ -245,7 +245,7 @@ struct StatusPill: View {
             return ColorPalette.info
         case .repairing:
             return ColorPalette.warning
-        case .fetching:
+        case .fetching, .moving, .running, .quickCheck:
             return ColorPalette.info
         case .propagating:
             return ColorPalette.textSecondaryDark
@@ -274,6 +274,12 @@ struct StatusPill: View {
             return "Fetching"
         case .propagating:
             return "Propagating"
+        case .moving:
+            return "Moving"
+        case .running:
+            return "Running"
+        case .quickCheck:
+            return "Quick Check"
         }
     }
 }

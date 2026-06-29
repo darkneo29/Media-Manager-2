@@ -35,6 +35,43 @@ enum WhatsNewCatalog {
     // Keep the newest release first so Settings can summarize the latest changes.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            id: "2026-06-29-build-8",
+            title: "Version 2.7 Build 8",
+            subtitle: "Remembered add settings, richer management controls, and SABnzbd downloads cleanup",
+            entries: [
+                WhatsNewEntry(
+                    id: "remembered-add-preferences",
+                    kind: .newFeature,
+                    title: "Remembered Add Preferences",
+                    description: "Movie and TV add screens now remember your preferred quality profile, root folder, monitoring, search, and tag choices for the next item you add."
+                ),
+                WhatsNewEntry(
+                    id: "expanded-radarr-sonarr-controls",
+                    kind: .newFeature,
+                    title: "More Add and Edit Controls",
+                    description: "Radarr adds now support minimum availability, monitored state, and tags. Sonarr adds now support series type, new episode monitoring, season folders, cutoff-unmet search, and tags."
+                ),
+                WhatsNewEntry(
+                    id: "management-details",
+                    kind: .improvement,
+                    title: "Clearer Management Details",
+                    description: "Movie and TV detail screens now show management metadata such as location, availability or series type, new episode behavior, season folder setting, and tag labels when available."
+                ),
+                WhatsNewEntry(
+                    id: "sabnzbd-downloads-refresh",
+                    kind: .fix,
+                    title: "SABnzbd Downloads Cleanup",
+                    description: "Active downloads now refresh from the SABnzbd queue while visible, history uses SABnzbd history, and queue/history errors no longer interfere with each other."
+                ),
+                WhatsNewEntry(
+                    id: "sabnzbd-history-decoding",
+                    kind: .fix,
+                    title: "More Reliable Download Statuses",
+                    description: "SABnzbd queue and history parsing now handles mixed field formats and statuses like Moving, Running, and Quick Check without dropping the downloads view into an error state."
+                )
+            ]
+        ),
+        WhatsNewRelease(
             id: "2026-06-28",
             title: "Version 2.7",
             subtitle: "Reliability, setup, and widget deep-link fixes",
@@ -79,7 +116,7 @@ enum WhatsNewCatalog {
                     id: "version-settings-cleanup",
                     kind: .improvement,
                     title: "Version and Settings Cleanup",
-                    description: "The app now reports version 2.7 with build 7, removes placeholder legal links, and opens the real project GitHub link from Settings."
+                    description: "The app now reports its current version and build in Settings, removes placeholder legal links, and opens the real project GitHub link."
                 )
             ]
         ),
