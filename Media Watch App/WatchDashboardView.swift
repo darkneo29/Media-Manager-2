@@ -13,6 +13,7 @@ struct WatchDashboardView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     header
                     librarySummary
+                    mediaActionsSection
                     servicesSection
                     downloadsSection
                     upcomingSection
@@ -72,6 +73,77 @@ struct WatchDashboardView: View {
         HStack(spacing: 6) {
             MetricTile(value: "\(snapshot.library.movieCount)", label: "Movies", icon: "film.fill")
             MetricTile(value: "\(snapshot.library.showCount)", label: "Shows", icon: "tv.fill")
+        }
+    }
+
+    private var mediaActionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Add", icon: "mic.fill")
+
+            Picker("Type", selection: $store.searchKind) {
+                ForEach(WatchMediaKind.allCases) { kind in
+                    Text(kind.title).tag(kind)
+                }
+            }
+            .labelsHidden()
+
+            HStack(spacing: 6) {
+                Button {
+                    requestVoiceSearch()
+                } label: {
+                    Label("Speak", systemImage: "mic.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(WatchTheme.accent)
+
+                Button {
+                    store.searchMedia(kind: store.searchKind, query: store.searchQuery)
+                } label: {
+                    if store.isSearching {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
+                .accessibilityLabel("Search")
+            }
+
+            TextField("Say or type a title", text: $store.searchQuery)
+                .textInputAutocapitalization(.words)
+                .submitLabel(.search)
+                .onSubmit {
+                    store.searchMedia(kind: store.searchKind, query: store.searchQuery)
+                }
+
+            if !store.mediaActionStatus.isEmpty {
+                Text(store.mediaActionStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            ForEach(store.searchResults) { result in
+                SearchResultRow(
+                    result: result,
+                    isAdding: store.addingResultId == result.id
+                ) {
+                    store.addMedia(result)
+                }
+            }
+        }
+        .padding(10)
+        .background(WatchTheme.card)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func requestVoiceSearch() {
+        WatchVoiceInput.requestTitle { phrase in
+            guard let phrase else { return }
+            store.searchQuery = phrase
+            store.searchMedia(kind: store.searchKind, query: phrase)
         }
     }
 
@@ -231,6 +303,59 @@ private struct ServiceRow: View {
         case .notConfigured:
             return WatchTheme.muted
         }
+    }
+}
+
+private struct SearchResultRow: View {
+    var result: WatchMediaSearchResult
+    var isAdding: Bool
+    var add: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: result.kind == .movie ? "film.fill" : "tv.fill")
+                    .font(.caption)
+                    .foregroundStyle(WatchTheme.accent)
+                    .frame(width: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(result.displayTitle)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(2)
+                    Text(result.subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if let overview = result.overview, !overview.isEmpty {
+                Text(overview)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+
+            Button {
+                add()
+            } label: {
+                if isAdding {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Label("Add", systemImage: "plus")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(WatchTheme.success)
+            .disabled(isAdding)
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 

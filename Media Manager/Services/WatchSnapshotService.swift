@@ -6,6 +6,7 @@ import WatchConnectivity
 final class WatchSnapshotService: NSObject {
     static let shared = WatchSnapshotService()
 
+    private let decoder = JSONDecoder()
     private let encoder = JSONEncoder()
     private var activationStarted = false
     private var isRefreshing = false
@@ -251,6 +252,211 @@ final class WatchSnapshotService: NSObject {
         }
     }
 
+    private func reply(for message: [String: Any]) async -> [String: Any] {
+        guard let command = message[WatchConnectivityKey.command] as? String,
+              let payload = message[WatchConnectivityKey.payload] as? Data else {
+            return [:]
+        }
+
+        switch command {
+        case WatchConnectivityCommand.searchMedia:
+            guard let request = try? decoder.decode(WatchMediaSearchRequest.self, from: payload) else {
+                return [:]
+            }
+            return encodedReply(await searchMedia(request: request))
+
+        case WatchConnectivityCommand.addMedia:
+            guard let request = try? decoder.decode(WatchMediaAddRequest.self, from: payload) else {
+                return [:]
+            }
+            return encodedReply(await addMedia(request: request))
+
+        default:
+            return [:]
+        }
+    }
+
+    private func encodedReply<T: Encodable>(_ value: T) -> [String: Any] {
+        guard let data = try? encoder.encode(value) else { return [:] }
+        return [WatchConnectivityKey.payload: data]
+    }
+
+    private func searchMedia(request: WatchMediaSearchRequest) async -> WatchMediaSearchResponse {
+        let query = request.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return .failure(request: request, message: "Say a movie or show title first.")
+        }
+
+        do {
+            switch request.kind {
+            case .movie:
+                guard ConfigurationManager.shared.isRadarrConfigured else {
+                    return .failure(request: request, message: "Radarr is not configured on iPhone.")
+                }
+
+                let movies = try await RadarrService.shared.searchMovies(term: query)
+                return WatchMediaSearchResponse(
+                    requestId: request.id,
+                    kind: request.kind,
+                    query: query,
+                    results: movies.prefix(8).map { movie in
+                        WatchMediaSearchResult(
+                            kind: .movie,
+                            remoteId: movie.tmdbId,
+                            title: movie.title,
+                            year: movie.year,
+                            subtitle: movie.runtime > 0 ? "\(movie.runtime)m" : "Movie",
+                            overview: movie.overview,
+                            runtime: movie.runtime,
+                            seasonCount: nil,
+                            network: nil
+                        )
+                    },
+                    errorMessage: nil
+                )
+
+            case .tvShow:
+                guard ConfigurationManager.shared.isSonarrConfigured else {
+                    return .failure(request: request, message: "Sonarr is not configured on iPhone.")
+                }
+
+                let shows = try await SonarrService.shared.searchShows(term: query)
+                return WatchMediaSearchResponse(
+                    requestId: request.id,
+                    kind: request.kind,
+                    query: query,
+                    results: shows.prefix(8).map { show in
+                        let seasonLabel = show.seasonCount == 1 ? "1 season" : "\(show.seasonCount) seasons"
+                        return WatchMediaSearchResult(
+                            kind: .tvShow,
+                            remoteId: show.tvdbId,
+                            title: show.title,
+                            year: show.year,
+                            subtitle: show.seasonCount > 0 ? seasonLabel : (show.network ?? "TV Show"),
+                            overview: show.overview,
+                            runtime: nil,
+                            seasonCount: show.seasonCount,
+                            network: show.network
+                        )
+                    },
+                    errorMessage: nil
+                )
+            }
+        } catch {
+            return .failure(request: request, message: "Search failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func addMedia(request: WatchMediaAddRequest) async -> WatchMediaAddResponse {
+        do {
+            switch request.result.kind {
+            case .movie:
+                guard ConfigurationManager.shared.isRadarrConfigured else {
+                    return addFailure(request: request, message: "Radarr is not configured on iPhone.")
+                }
+
+                let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
+                let rootFolders = try await RadarrService.shared.fetchRootFolders()
+                let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+                let preferences = AddMediaPreferences.shared.radarrSettings(
+                    profiles: qualityProfiles,
+                    rootFolders: rootFolders,
+                    tags: tags
+                )
+                let lookup = MovieLookup(
+                    radarrId: nil,
+                    tmdbId: request.result.remoteId,
+                    title: request.result.title,
+                    year: request.result.year,
+                    overview: request.result.overview,
+                    runtime: request.result.runtime ?? 0,
+                    images: nil
+                )
+                let addedMovie = try await RadarrService.shared.addMovie(
+                    movie: lookup,
+                    qualityProfileId: preferences.qualityProfileId,
+                    rootFolderPath: preferences.rootFolderPath,
+                    minimumAvailability: preferences.minimumAvailability,
+                    monitored: preferences.monitored,
+                    searchForMovie: preferences.searchForMovie,
+                    tagIds: preferences.tagIds
+                )
+
+                LibraryStateManager.shared.addMovieLocally(addedMovie)
+                await refreshFromCurrentState(forceLibraryRefresh: false)
+                let searchStatus = preferences.searchForMovie ? " and started searching" : ""
+                return WatchMediaAddResponse(
+                    requestId: request.id,
+                    resultId: request.result.id,
+                    success: true,
+                    message: "Added \(addedMovie.title)\(searchStatus)."
+                )
+
+            case .tvShow:
+                guard ConfigurationManager.shared.isSonarrConfigured else {
+                    return addFailure(request: request, message: "Sonarr is not configured on iPhone.")
+                }
+
+                let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
+                let rootFolders = try await SonarrService.shared.fetchRootFolders()
+                let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+                let preferences = AddMediaPreferences.shared.sonarrSettings(
+                    profiles: qualityProfiles,
+                    rootFolders: rootFolders,
+                    tags: tags
+                )
+                let lookup = TVShowLookup(
+                    tvdbId: request.result.remoteId,
+                    title: request.result.title,
+                    year: request.result.year,
+                    overview: request.result.overview,
+                    statistics: nil,
+                    network: request.result.network,
+                    images: nil
+                )
+                let addedShow = try await SonarrService.shared.addShow(
+                    show: lookup,
+                    monitorOption: preferences.monitorOption,
+                    qualityProfileId: preferences.qualityProfileId,
+                    rootFolderPath: preferences.rootFolderPath,
+                    monitored: preferences.monitored,
+                    monitorNewItems: preferences.monitorNewItems,
+                    seriesType: preferences.seriesType,
+                    seasonFolder: preferences.seasonFolder,
+                    searchForMissingEpisodes: preferences.searchForMissingEpisodes,
+                    searchForCutoffUnmetEpisodes: preferences.searchForCutoffUnmetEpisodes,
+                    tagIds: preferences.tagIds
+                )
+
+                LibraryStateManager.shared.addShowLocally(addedShow)
+                await refreshFromCurrentState(forceLibraryRefresh: false)
+                let searchStatus = preferences.searchForMissingEpisodes ? " and started searching" : ""
+                return WatchMediaAddResponse(
+                    requestId: request.id,
+                    resultId: request.result.id,
+                    success: true,
+                    message: "Added \(addedShow.title)\(searchStatus)."
+                )
+            }
+        } catch {
+            let message = error.localizedDescription
+            if message.localizedCaseInsensitiveContains("already") ||
+                message.localizedCaseInsensitiveContains("exists") {
+                return addFailure(request: request, message: "\(request.result.title) is already in your library.")
+            }
+            return addFailure(request: request, message: "Add failed: \(message)")
+        }
+    }
+
+    private func addFailure(request: WatchMediaAddRequest, message: String) -> WatchMediaAddResponse {
+        WatchMediaAddResponse(
+            requestId: request.id,
+            resultId: request.result.id,
+            success: false,
+            message: message
+        )
+    }
+
     private func toggleDownloads() async {
         guard ConfigurationManager.shared.isSabNZBConfigured else { return }
 
@@ -294,6 +500,17 @@ extension WatchSnapshotService: WCSessionDelegate {
         }
     }
 
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveMessage message: [String: Any],
+        replyHandler: @escaping ([String: Any]) -> Void
+    ) {
+        Task { @MainActor in
+            let reply = await self.reply(for: message)
+            replyHandler(reply)
+        }
+    }
+
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         guard let command = userInfo[WatchConnectivityKey.command] as? String else { return }
         Task { @MainActor in
@@ -302,13 +519,4 @@ extension WatchSnapshotService: WCSessionDelegate {
     }
 }
 
-enum WatchConnectivityKey {
-    nonisolated static let command = "command"
-    nonisolated static let snapshot = "snapshot"
-}
-
-enum WatchConnectivityCommand {
-    nonisolated static let refreshSnapshot = "refreshSnapshot"
-    nonisolated static let toggleDownloads = "toggleDownloads"
-}
 #endif
