@@ -82,6 +82,22 @@ final class iCloudSyncService {
     /// Whether iCloud sync is enabled (stored locally, not synced)
     private(set) var isEnabled: Bool = false
 
+    private struct SyncSnapshot {
+        let localTimestamp: TimeInterval
+        let cloudTimestamp: TimeInterval
+        let localValueCount: Int
+        let cloudValueCount: Int
+
+        var localHasData: Bool { localValueCount > 0 }
+        var cloudHasData: Bool { cloudValueCount > 0 }
+    }
+
+    private enum SyncResolution {
+        case pullCloudToLocal
+        case pushLocalToCloud
+        case noData
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -111,6 +127,9 @@ final class iCloudSyncService {
         syncStatus = .syncing
         localDefaults.set(true, forKey: LocalKeys.iCloudSyncEnabled)
 
+        purgeCloudSecrets()
+        ubiquitousStore.synchronize()
+
         // Perform initial migration BEFORE registering for notifications
         await performInitialMigration()
 
@@ -138,7 +157,9 @@ final class iCloudSyncService {
 
         syncStatus = .syncing
         purgeCloudSecrets()
-        pushLocalToCloud()
+        ubiquitousStore.synchronize()
+        applyResolvedSync()
+        purgeCloudSecrets()
         ubiquitousStore.synchronize()
 
         updateSyncStatus()
@@ -157,57 +178,81 @@ final class iCloudSyncService {
 
     private func performInitialMigration() async {
         let migrationComplete = localDefaults.bool(forKey: LocalKeys.initialMigrationComplete)
-
-        guard !migrationComplete else { return }
-
-        // Get timestamps
-        let localTimestamp = localDefaults.double(forKey: LocalKeys.lastLocalChangeTimestamp)
-        let cloudTimestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
-
-        // Check if local has meaningful data
-        let localHasData = syncableKeys.contains { key in
-            hasMeaningfulValue(localDefaults.object(forKey: key))
-        }
-
-        // Check if cloud has meaningful data
-        let cloudHasData = syncableKeys.contains { key in
-            hasMeaningfulValue(ubiquitousStore.object(forKey: key))
-        }
+        let snapshot = makeSyncSnapshot()
 
         #if DEBUG
-        print("[iCloudSync] Migration - Local has data: \(localHasData), Cloud has data: \(cloudHasData)")
-        print("[iCloudSync] Migration - Local timestamp: \(localTimestamp), Cloud timestamp: \(cloudTimestamp)")
+        print("[iCloudSync] Migration - Local values: \(snapshot.localValueCount), Cloud values: \(snapshot.cloudValueCount)")
+        print("[iCloudSync] Migration - Local timestamp: \(snapshot.localTimestamp), Cloud timestamp: \(snapshot.cloudTimestamp)")
+        print("[iCloudSync] Migration - Already complete: \(migrationComplete)")
         #endif
 
-        if cloudHasData && !localHasData {
-            // Cloud has data, local is empty -> pull from cloud
-            #if DEBUG
-            print("[iCloudSync] Migration: Pulling from cloud (local empty)")
-            #endif
-            pullCloudToLocal()
-        } else if localHasData && !cloudHasData {
-            // Local has data, cloud is empty -> push to cloud
-            #if DEBUG
-            print("[iCloudSync] Migration: Pushing to cloud (cloud empty)")
-            #endif
-            pushLocalToCloud()
-        } else if localHasData && cloudHasData {
-            // Both have data -> use most recent based on timestamp
-            if cloudTimestamp > localTimestamp {
-                #if DEBUG
-                print("[iCloudSync] Migration: Pulling from cloud (cloud newer)")
-                #endif
-                pullCloudToLocal()
-            } else {
-                #if DEBUG
-                print("[iCloudSync] Migration: Pushing to cloud (local newer)")
-                #endif
-                pushLocalToCloud()
+        applyResolvedSync(snapshot: snapshot)
+        localDefaults.set(true, forKey: LocalKeys.initialMigrationComplete)
+        purgeCloudSecrets()
+    }
+
+    private func makeSyncSnapshot() -> SyncSnapshot {
+        SyncSnapshot(
+            localTimestamp: localDefaults.double(forKey: LocalKeys.lastLocalChangeTimestamp),
+            cloudTimestamp: ubiquitousStore.double(forKey: CloudKeys.syncTimestamp),
+            localValueCount: meaningfulSyncableValueCount(in: localDefaults),
+            cloudValueCount: meaningfulSyncableValueCount(in: ubiquitousStore)
+        )
+    }
+
+    private func meaningfulSyncableValueCount(in store: KeyValueStoring) -> Int {
+        syncableKeys.reduce(into: 0) { count, key in
+            if hasMeaningfulValue(store.object(forKey: key)) {
+                count += 1
+            }
+        }
+    }
+
+    private func resolution(for snapshot: SyncSnapshot) -> SyncResolution {
+        if snapshot.cloudHasData {
+            if !snapshot.localHasData {
+                return .pullCloudToLocal
+            }
+
+            if snapshot.cloudTimestamp > snapshot.localTimestamp {
+                return .pullCloudToLocal
+            }
+
+            if snapshot.localTimestamp == 0,
+               snapshot.cloudValueCount >= snapshot.localValueCount {
+                return .pullCloudToLocal
             }
         }
 
-        localDefaults.set(true, forKey: LocalKeys.initialMigrationComplete)
-        purgeCloudSecrets()
+        if snapshot.localHasData {
+            if !snapshot.cloudHasData || snapshot.localTimestamp > snapshot.cloudTimestamp {
+                return .pushLocalToCloud
+            }
+        }
+
+        return .noData
+    }
+
+    private func applyResolvedSync(snapshot: SyncSnapshot? = nil) {
+        let snapshot = snapshot ?? makeSyncSnapshot()
+
+        switch resolution(for: snapshot) {
+        case .pullCloudToLocal:
+            #if DEBUG
+            print("[iCloudSync] Pulling settings from iCloud")
+            #endif
+            pullCloudToLocal()
+        case .pushLocalToCloud:
+            #if DEBUG
+            print("[iCloudSync] Pushing local settings to iCloud")
+            #endif
+            pushLocalToCloud()
+        case .noData:
+            #if DEBUG
+            print("[iCloudSync] No settings changes to sync")
+            #endif
+            break
+        }
     }
 
     // MARK: - Notification Tokens

@@ -76,26 +76,10 @@ struct SettingsView: View {
             .navBarTitleDisplayMode(.inline)
             #endif
             .navigationDestination(for: SettingsDestination.self) { destination in
-                switch destination {
-                case .radarr:
-                    RadarrSettingsView()
-                case .sonarr:
-                    SonarrSettingsView()
-                case .sabnzb:
-                    SabNZBSettingsView()
-                case .unraid:
-                    UnraidSettingsView()
-                case .tmdb:
-                    TMDBSettingsView()
-                case .whatsNew:
-                    WhatsNewView()
-                case .radarrTroubleshooting:
-                    RadarrTroubleshootingView()
-                case .sonarrTroubleshooting:
-                    SonarrTroubleshootingView()
-                case .sabnzbTroubleshooting:
-                    SabNZBTroubleshootingView()
-                }
+                settingsDestination(for: destination)
+                    .tvSettingsBackNavigation {
+                        popSettingsDestination()
+                    }
             }
             #if !os(tvOS)
             .fileExporter(
@@ -163,6 +147,35 @@ struct SettingsView: View {
                 Text(alertMessage)
             }
         }
+    }
+
+    @ViewBuilder
+    private func settingsDestination(for destination: SettingsDestination) -> some View {
+        switch destination {
+        case .radarr:
+            RadarrSettingsView()
+        case .sonarr:
+            SonarrSettingsView()
+        case .sabnzb:
+            SabNZBSettingsView()
+        case .unraid:
+            UnraidSettingsView()
+        case .tmdb:
+            TMDBSettingsView()
+        case .whatsNew:
+            WhatsNewView()
+        case .radarrTroubleshooting:
+            RadarrTroubleshootingView()
+        case .sonarrTroubleshooting:
+            SonarrTroubleshootingView()
+        case .sabnzbTroubleshooting:
+            SabNZBTroubleshootingView()
+        }
+    }
+
+    private func popSettingsDestination() {
+        guard !navigationPath.isEmpty else { return }
+        navigationPath.removeLast()
     }
 
     // MARK: - tvOS Settings Layout
@@ -882,7 +895,64 @@ struct TVInfoCard: View {
         )
     }
 }
+
+private struct TVSettingsBackNavigationModifier: ViewModifier {
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onExitCommand(perform: action)
+            .safeAreaInset(edge: .top, alignment: .leading) {
+                TVSettingsBackButton(action: action)
+                    .padding(.leading, TVSizing.contentPadding)
+                    .padding(.top, AppSpacing.md)
+                    .padding(.bottom, AppSpacing.sm)
+            }
+    }
+}
+
+private struct TVSettingsBackButton: View {
+    let action: () -> Void
+
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        Button(action: action) {
+            Label("Settings", systemImage: "chevron.left")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundColor(ColorPalette.textPrimaryDark)
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.vertical, AppSpacing.sm)
+                .background(
+                    Capsule()
+                        .fill(ColorPalette.cardBackgroundDark)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
+                )
+                .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+                .shadow(
+                    color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
+                    radius: isFocused ? TVSizing.focusShadowRadius : 0
+                )
+                .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+        }
+        .buttonStyle(.plain)
+    }
+}
 #endif
+
+private extension View {
+    @ViewBuilder
+    func tvSettingsBackNavigation(action: @escaping () -> Void) -> some View {
+        #if os(tvOS)
+        modifier(TVSettingsBackNavigationModifier(action: action))
+        #else
+        self
+        #endif
+    }
+}
 
 struct SettingsSection<Content: View>: View {
     let title: String
