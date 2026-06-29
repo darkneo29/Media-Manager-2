@@ -15,6 +15,11 @@ struct Media_ManagerApp: App {
             ContentView()
                 .preferredColorScheme(.dark)
                 .environment(deepLinkHandler)
+                .task {
+                    #if os(iOS)
+                    WatchSnapshotService.shared.start()
+                    #endif
+                }
                 .onOpenURL { url in
                     deepLinkHandler.handle(url: url)
                 }

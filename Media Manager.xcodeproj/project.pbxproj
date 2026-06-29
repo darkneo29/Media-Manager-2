@@ -10,6 +10,7 @@
 		CFA4EA822F02B40000D5AC7F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CFA4EA812F02B40000D5AC7F /* WidgetKit.framework */; };
 		CFA4EA842F02B40000D5AC7F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CFA4EA832F02B40000D5AC7F /* SwiftUI.framework */; };
 		CFA4EA932F02B40000D5AC7F /* upcomingWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		65346D220F7B4E16AAE11D93 /* Media Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81DE9594B794C48961BD790 /* Media Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CFTVOS0012F02B50000D5AC7F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = CFTVOS0022F02B50000D5AC7F /* LaunchScreen.storyboard */; platformFilter = ios; };
 /* End PBXBuildFile section */
 
@@ -20,6 +21,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = CFA4EA7E2F02B40000D5AC7F;
 			remoteInfo = upcomingWidgetExtension;
+		};
+		21D78C403B674F82B24C556D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CFD772E12EFC8ED1005E5D93 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BC01A9A89F4149F0B7A97D94;
+			remoteInfo = "Media Watch App";
 		};
 		CFD772F72EFC8ED4005E5D93 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -49,12 +57,24 @@
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		200DE2D33D1E4D4A83D110E3 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				65346D220F7B4E16AAE11D93 /* Media Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = upcomingWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA4EA812F02B40000D5AC7F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		CFA4EA832F02B40000D5AC7F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		D81DE9594B794C48961BD790 /* Media Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Media Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD772E92EFC8ED2005E5D93 /* Media Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Media Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD772F62EFC8ED4005E5D93 /* Media ManagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Media ManagerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD773002EFC8ED4005E5D93 /* Media ManagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Media ManagerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -80,9 +100,19 @@
 			path = UpcomingWidget;
 			sourceTree = "<group>";
 		};
+		8C0234A92FC2497EBC08C14B /* Media Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Media Watch App";
+			sourceTree = "<group>";
+		};
 		CFD772EB2EFC8ED2005E5D93 /* Media Manager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Media Manager";
+			sourceTree = "<group>";
+		};
+		E848A4AF41C84876860447B3 /* MediaWatchShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MediaWatchShared;
 			sourceTree = "<group>";
 		};
 		CFD772F92EFC8ED4005E5D93 /* Media ManagerTests */ = {
@@ -104,6 +134,13 @@
 			files = (
 				CFA4EA842F02B40000D5AC7F /* SwiftUI.framework in Frameworks */,
 				CFA4EA822F02B40000D5AC7F /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CB0B226D7A684BBB8BF82F92 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,6 +183,8 @@
 				CFD772EB2EFC8ED2005E5D93 /* Media Manager */,
 				CFD772F92EFC8ED4005E5D93 /* Media ManagerTests */,
 				CFD773032EFC8ED4005E5D93 /* Media ManagerUITests */,
+				E848A4AF41C84876860447B3 /* MediaWatchShared */,
+				8C0234A92FC2497EBC08C14B /* Media Watch App */,
 				CFA4EA852F02B40000D5AC7F /* UpcomingWidget */,
 				CFTVOS0022F02B50000D5AC7F /* LaunchScreen.storyboard */,
 				CFA4EA802F02B40000D5AC7F /* Frameworks */,
@@ -160,6 +199,7 @@
 				CFD772F62EFC8ED4005E5D93 /* Media ManagerTests.xctest */,
 				CFD773002EFC8ED4005E5D93 /* Media ManagerUITests.xctest */,
 				CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */,
+				D81DE9594B794C48961BD790 /* Media Watch App.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -189,6 +229,29 @@
 			productReference = CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		BC01A9A89F4149F0B7A97D94 /* Media Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */;
+			buildPhases = (
+				083E0848B9B64DBC8CADCDE0 /* Sources */,
+				CB0B226D7A684BBB8BF82F92 /* Frameworks */,
+				FE295275FFEA4A598DDB17DA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				E848A4AF41C84876860447B3 /* MediaWatchShared */,
+				8C0234A92FC2497EBC08C14B /* Media Watch App */,
+			);
+			name = "Media Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Media Watch App";
+			productReference = D81DE9594B794C48961BD790 /* Media Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 		CFD772E82EFC8ED2005E5D93 /* Media Manager */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CFD7730A2EFC8ED4005E5D93 /* Build configuration list for PBXNativeTarget "Media Manager" */;
@@ -197,14 +260,17 @@
 				CFD772E62EFC8ED2005E5D93 /* Frameworks */,
 				CFD772E72EFC8ED2005E5D93 /* Resources */,
 				CFA4EA982F02B40000D5AC7F /* Embed Foundation Extensions */,
+				200DE2D33D1E4D4A83D110E3 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				CFA4EA922F02B40000D5AC7F /* PBXTargetDependency */,
+				3CF1BEA1EAD14D0BA7D859F4 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				CFD772EB2EFC8ED2005E5D93 /* Media Manager */,
+				E848A4AF41C84876860447B3 /* MediaWatchShared */,
 			);
 			name = "Media Manager";
 			packageProductDependencies = (
@@ -272,6 +338,9 @@
 					CFA4EA7E2F02B40000D5AC7F = {
 						CreatedOnToolsVersion = 26.2;
 					};
+					BC01A9A89F4149F0B7A97D94 = {
+						CreatedOnToolsVersion = 26.2;
+					};
 					CFD772E82EFC8ED2005E5D93 = {
 						CreatedOnToolsVersion = 26.2;
 					};
@@ -303,12 +372,20 @@
 				CFD772F52EFC8ED4005E5D93 /* Media ManagerTests */,
 				CFD772FF2EFC8ED4005E5D93 /* Media ManagerUITests */,
 				CFA4EA7E2F02B40000D5AC7F /* upcomingWidgetExtension */,
+				BC01A9A89F4149F0B7A97D94 /* Media Watch App */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		CFA4EA7D2F02B40000D5AC7F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE295275FFEA4A598DDB17DA /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -347,6 +424,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		083E0848B9B64DBC8CADCDE0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CFD772E52EFC8ED2005E5D93 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -376,6 +460,12 @@
 			platformFilter = ios;
 			target = CFA4EA7E2F02B40000D5AC7F /* upcomingWidgetExtension */;
 			targetProxy = CFA4EA912F02B40000D5AC7F /* PBXContainerItemProxy */;
+		};
+		3CF1BEA1EAD14D0BA7D859F4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = BC01A9A89F4149F0B7A97D94 /* Media Watch App */;
+			targetProxy = 21D78C403B674F82B24C556D /* PBXContainerItemProxy */;
 		};
 		CFD772F82EFC8ED4005E5D93 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -455,6 +545,77 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A80C72AF3956486584F2E404 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				DEVELOPMENT_TEAM = WV4EJ58H63;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		35E46190B6824CE1B804A3B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				DEVELOPMENT_TEAM = WV4EJ58H63;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
@@ -783,6 +944,15 @@
 			buildConfigurations = (
 				CFA4EA962F02B40000D5AC7F /* Debug */,
 				CFA4EA972F02B40000D5AC7F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80C72AF3956486584F2E404 /* Debug */,
+				35E46190B6824CE1B804A3B4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

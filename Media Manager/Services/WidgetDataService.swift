@@ -62,6 +62,14 @@ class WidgetDataService {
         isConfigured: Bool,
         forceReload: Bool = false
     ) {
+        #if os(iOS)
+        WatchSnapshotService.shared.sync(
+            movies: movies,
+            tvShows: tvShows,
+            forceSend: forceReload
+        )
+        #endif
+
         let events = buildUpcomingEvents(movies: movies, tvShows: tvShows)
         let payloadChanged = saveEventsIfChanged(events)
         let configChanged = saveConfigurationStatusIfChanged(isConfigured: isConfigured)
