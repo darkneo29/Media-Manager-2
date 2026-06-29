@@ -377,6 +377,15 @@ struct QuickAddMovieSheet: View {
                 }
             }
 
+            if !tags.isEmpty {
+                TVTagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
             QuickAddToggleRow(
                 title: "Monitored",
                 subtitle: "Let Radarr manage this movie after adding",
@@ -1001,6 +1010,15 @@ struct QuickAddTVShowSheet: View {
                     let nextIndex = (currentIndex + 1) % allCases.count
                     monitorNewItems = allCases[nextIndex]
                 }
+            }
+
+            if !tags.isEmpty {
+                TVTagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
             }
 
             QuickAddToggleRow(

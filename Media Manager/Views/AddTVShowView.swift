@@ -90,6 +90,9 @@ struct AddTVShowView: View {
                 .padding(AppSpacing.md)
 
                 // Add options section
+                #if os(tvOS)
+                tvOSOptionsSection
+                #else
                 VStack(alignment: .leading, spacing: AppSpacing.sm) {
                     // Quality profile picker
                     HStack {
@@ -309,6 +312,7 @@ struct AddTVShowView: View {
                 }
                 .padding(.horizontal, AppSpacing.md)
                 .padding(.bottom, AppSpacing.sm)
+                #endif
 
                 if let optionsErrorMessage {
                     optionErrorBanner(message: optionsErrorMessage) {
@@ -399,6 +403,109 @@ struct AddTVShowView: View {
             }
         }
     }
+
+    #if os(tvOS)
+    private var tvOSOptionsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            TVAddMoviePickerRow(
+                title: "Quality Profile",
+                isLoading: isLoadingOptions,
+                selectedLabel: qualityProfiles.first { $0.id == selectedQualityProfileId }?.name ?? "Select..."
+            ) {
+                if let currentIndex = qualityProfiles.firstIndex(where: { $0.id == selectedQualityProfileId }) {
+                    let nextIndex = (currentIndex + 1) % qualityProfiles.count
+                    selectedQualityProfileId = qualityProfiles[nextIndex].id
+                } else if let first = qualityProfiles.first {
+                    selectedQualityProfileId = first.id
+                }
+            }
+
+            TVAddMoviePickerRow(
+                title: "Root Folder",
+                isLoading: isLoadingOptions,
+                selectedLabel: rootFolders.first { $0.path == selectedRootFolderPath }?.folderName ?? "Select..."
+            ) {
+                if let currentIndex = rootFolders.firstIndex(where: { $0.path == selectedRootFolderPath }) {
+                    let nextIndex = (currentIndex + 1) % rootFolders.count
+                    selectedRootFolderPath = rootFolders[nextIndex].path
+                } else if let first = rootFolders.first {
+                    selectedRootFolderPath = first.path
+                }
+            }
+
+            TVAddMoviePickerRow(
+                title: "Series Type",
+                isLoading: isLoadingOptions,
+                selectedLabel: seriesType.displayName
+            ) {
+                let allCases = SonarrSeriesType.allCases
+                if let currentIndex = allCases.firstIndex(of: seriesType) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    seriesType = allCases[nextIndex]
+                }
+            }
+
+            TVAddMoviePickerRow(
+                title: "Monitor",
+                isLoading: false,
+                selectedLabel: selectedMonitorOption.displayName
+            ) {
+                let allCases = MonitorOption.allCases
+                if let currentIndex = allCases.firstIndex(of: selectedMonitorOption) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    selectedMonitorOption = allCases[nextIndex]
+                }
+            }
+
+            TVAddMoviePickerRow(
+                title: "New Episodes",
+                isLoading: isLoadingOptions,
+                selectedLabel: monitorNewItems.displayName
+            ) {
+                let allCases = SonarrNewItemMonitor.allCases
+                if let currentIndex = allCases.firstIndex(of: monitorNewItems) {
+                    let nextIndex = (currentIndex + 1) % allCases.count
+                    monitorNewItems = allCases[nextIndex]
+                }
+            }
+
+            if !tags.isEmpty {
+                TVTagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
+            TVAddMovieToggleRow(
+                title: "Monitored",
+                subtitle: "Let Sonarr manage this series after adding",
+                isOn: $monitored
+            )
+
+            TVAddMovieToggleRow(
+                title: "Season Folders",
+                subtitle: "Organize episodes into season folders",
+                isOn: $seasonFolder
+            )
+
+            TVAddMovieToggleRow(
+                title: "Search for Episodes",
+                subtitle: "Start searching when series is added",
+                isOn: $searchForMissing
+            )
+
+            TVAddMovieToggleRow(
+                title: "Search Cutoff Unmet",
+                subtitle: "Also search monitored episodes below cutoff",
+                isOn: $searchForCutoffUnmet
+            )
+        }
+        .padding(.horizontal, TVSizing.contentPadding)
+        .padding(.bottom, AppSpacing.md)
+    }
+    #endif
 
     private func loadOptions(forceRefresh: Bool = false) {
         isLoadingOptions = true

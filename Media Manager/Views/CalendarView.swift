@@ -53,6 +53,7 @@ struct CalendarView: View {
     @State private var selectedDate: Date = Date()
     @State private var displayedMonth: Date = Date()
     @State private var navigationPath = NavigationPath()
+    @State private var isRefreshing = false
 
     // MARK: - Cached Event Data
 
@@ -108,7 +109,7 @@ struct CalendarView: View {
         }
     }
 
-    // MARK: - tvOS Layout (No Scrolling)
+    // MARK: - tvOS Layout
 
     #if os(tvOS)
     private var tvOSCalendarLayout: some View {
@@ -223,6 +224,18 @@ struct CalendarView: View {
                     .padding(.horizontal, AppSpacing.lg)
                     .padding(.vertical, AppSpacing.sm)
             }
+
+            Button {
+                Task {
+                    await refreshData()
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(ColorPalette.secondary)
+                    .frame(width: 60, height: 60)
+            }
+            .disabled(isRefreshing)
         }
     }
 
@@ -305,28 +318,19 @@ struct CalendarView: View {
                 }
                 .frame(maxWidth: .infinity)
             } else {
-                // Events List (max 5 visible without scroll)
-                VStack(spacing: AppSpacing.md) {
-                    ForEach(eventsForSelectedDate.prefix(5)) { event in
-                        TVCalendarEventCard(
-                            event: event,
-                            isFollowed: releaseRadar.isFollowing(event: event)
-                        ) {
-                            navigateToDetail(for: event)
+                ScrollView {
+                    LazyVStack(spacing: AppSpacing.md) {
+                        ForEach(eventsForSelectedDate) { event in
+                            TVCalendarEventCard(
+                                event: event,
+                                isFollowed: releaseRadar.isFollowing(event: event)
+                            ) {
+                                navigateToDetail(for: event)
+                            }
                         }
                     }
-
-                    // Show count if more events
-                    if eventsForSelectedDate.count > 5 {
-                        Text("+\(eventsForSelectedDate.count - 5) more")
-                            .font(.system(size: 20))
-                            .foregroundColor(ColorPalette.textMutedDark)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, AppSpacing.sm)
-                    }
+                    .padding(.bottom, TVSizing.contentPadding)
                 }
-
-                Spacer()
             }
         }
     }
@@ -637,6 +641,10 @@ struct CalendarView: View {
     }
 
     private func refreshData() async {
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         await libraryState.loadAll(forceRefresh: true)
 
         // Update widget data with fresh library data

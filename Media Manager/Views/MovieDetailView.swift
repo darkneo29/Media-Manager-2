@@ -729,7 +729,9 @@ struct ReleaseSearchSheet: View {
                             .listRowBackground(ColorPalette.backgroundDark)
                         }
                     }
+                    #if !os(tvOS)
                     .scrollContentBackground(.hidden)
+                    #endif
                 }
             }
             .navigationTitle("Manual Search")

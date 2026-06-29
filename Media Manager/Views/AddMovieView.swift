@@ -396,6 +396,15 @@ struct AddMovieView: View {
                 }
             }
 
+            if !tags.isEmpty {
+                TVTagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
             TVAddMovieToggleRow(
                 title: "Monitored",
                 subtitle: "Let Radarr manage this movie after adding",
@@ -673,6 +682,81 @@ struct TagSelectionMenuRow: View {
         }
     }
 }
+
+#if os(tvOS)
+struct TVTagSelectionMenuRow: View {
+    let title: String
+    let selectedLabel: String
+    let tags: [MediaTag]
+    @Binding var selectedTagIds: Set<Int>
+
+    var body: some View {
+        Menu {
+            ForEach(tags) { tag in
+                Button {
+                    toggle(tag.id)
+                } label: {
+                    Label(
+                        tag.label,
+                        systemImage: selectedTagIds.contains(tag.id) ? "checkmark.circle.fill" : "circle"
+                    )
+                }
+            }
+
+            if !selectedTagIds.isEmpty {
+                Divider()
+                Button("Clear Tags", role: .destructive) {
+                    selectedTagIds.removeAll()
+                }
+            }
+        } label: {
+            HStack(spacing: AppSpacing.lg) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Text(title)
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    Text("Apply Radarr/Sonarr tags when adding")
+                        .font(.system(size: 22))
+                        .foregroundColor(Color.white.opacity(0.7))
+                }
+
+                Spacer()
+
+                HStack(spacing: AppSpacing.sm) {
+                    Text(selectedLabel)
+                        .font(.system(size: 24))
+                        .foregroundColor(ColorPalette.secondary)
+                        .lineLimit(1)
+
+                    Image(systemName: "tag")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundColor(Color.white.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, AppSpacing.xl)
+            .padding(.vertical, AppSpacing.lg)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .fill(ColorPalette.cardBackgroundDark)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .stroke(ColorPalette.divider, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toggle(_ id: Int) {
+        if selectedTagIds.contains(id) {
+            selectedTagIds.remove(id)
+        } else {
+            selectedTagIds.insert(id)
+        }
+    }
+}
+#endif
 
 struct SearchResultCard: View {
     let movie: MovieLookup

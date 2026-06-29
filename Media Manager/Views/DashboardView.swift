@@ -119,6 +119,11 @@ struct DashboardView: View {
 
                         ScrollView {
                             VStack(spacing: TVSizing.sectionSpacing) {
+                                ServerHealthWidget(showHeader: true, onTap: {
+                                    navigationPath.append("server")
+                                })
+                                .padding(.horizontal, TVSizing.contentPadding)
+
                                 if shouldShowReleaseRadarSection {
                                     releaseRadarSection
                                 }
@@ -545,6 +550,19 @@ struct DashboardView: View {
                 .font(AppTypography.title2(.bold))
                 .foregroundColor(ColorPalette.textPrimaryDark)
             Spacer()
+            Button {
+                Task {
+                    await loadData(forceRefresh: true, forceWidgetReload: true)
+                    hasLoadedInitialData = true
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundColor(ColorPalette.secondary)
+                    .frame(width: 64, height: 48)
+            }
+            .buttonStyle(TVCardButtonStyle())
+            .disabled(shouldShowLoading)
         }
         .padding(.horizontal, TVSizing.contentPadding)
         .padding(.vertical, AppSpacing.md)

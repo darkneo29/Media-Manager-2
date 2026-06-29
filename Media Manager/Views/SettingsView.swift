@@ -260,43 +260,81 @@ struct SettingsView: View {
 
                 // iCloud Sync Section
                 TVSettingsSection(title: "iCloud Sync") {
-                    HStack(spacing: AppSpacing.lg) {
-                        Image(systemName: syncService.isEnabled ? "checkmark.icloud.fill" : "icloud.slash")
-                            .font(.system(size: 32))
-                            .foregroundColor(syncService.isEnabled ? ColorPalette.success : ColorPalette.textMutedDark)
+                    VStack(spacing: AppSpacing.md) {
+                        HStack(spacing: AppSpacing.lg) {
+                            Image(systemName: syncService.isEnabled ? "checkmark.icloud.fill" : "icloud.slash")
+                                .font(.system(size: 32))
+                                .foregroundColor(syncService.isEnabled ? ColorPalette.success : ColorPalette.textMutedDark)
 
-                        VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                            Text("iCloud Sync")
-                                .font(.system(size: 28, weight: .semibold))
-                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                Text("iCloud Sync")
+                                    .font(.system(size: 28, weight: .semibold))
+                                    .foregroundColor(ColorPalette.textPrimaryDark)
 
-                            Text(syncService.isEnabled ? "Settings synced from iCloud" : "Enable to sync settings from iPhone/iPad")
-                                .font(.system(size: 22))
-                                .foregroundColor(ColorPalette.textSecondaryDark)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: Binding(
-                            get: { syncService.isEnabled },
-                            set: { newValue in
-                                if newValue {
-                                    Task {
-                                        await syncService.enableSync()
-                                    }
-                                } else {
-                                    syncService.disableSync()
-                                }
+                                Text(syncService.isEnabled ? "Settings synced from iCloud" : "Enable to sync settings from iPhone/iPad")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(ColorPalette.textSecondaryDark)
                             }
-                        ))
-                        .labelsHidden()
+
+                            Spacer()
+
+                            Toggle("", isOn: Binding(
+                                get: { syncService.isEnabled },
+                                set: { newValue in
+                                    if newValue {
+                                        Task {
+                                            await syncService.enableSync()
+                                        }
+                                    } else {
+                                        syncService.disableSync()
+                                    }
+                                }
+                            ))
+                            .labelsHidden()
+                        }
+                        .padding(.horizontal, AppSpacing.xl)
+                        .padding(.vertical, AppSpacing.lg)
+                        .background(
+                            RoundedRectangle(cornerRadius: AppRadius.lg)
+                                .fill(ColorPalette.cardBackgroundDark)
+                        )
+
+                        if syncService.isEnabled {
+                            HStack(spacing: AppSpacing.lg) {
+                                syncStatusIcon
+                                    .font(.system(size: 32))
+                                    .foregroundColor(syncStatusColor)
+
+                                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                                    Text("Status")
+                                        .font(.system(size: 28, weight: .semibold))
+                                        .foregroundColor(ColorPalette.textPrimaryDark)
+
+                                    Text(syncService.syncStatus.displayText)
+                                        .font(.system(size: 22))
+                                        .foregroundColor(ColorPalette.textSecondaryDark)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, AppSpacing.xl)
+                            .padding(.vertical, AppSpacing.lg)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppRadius.lg)
+                                    .fill(ColorPalette.cardBackgroundDark)
+                            )
+
+                            TVActionButton(
+                                title: isSyncing ? "Syncing..." : "Sync Now",
+                                icon: "arrow.triangle.2.circlepath",
+                                color: ColorPalette.secondary,
+                                isLoading: isSyncing
+                            ) {
+                                syncService.syncNow()
+                            }
+                            .disabled(isSyncing)
+                        }
                     }
-                    .padding(.horizontal, AppSpacing.xl)
-                    .padding(.vertical, AppSpacing.lg)
-                    .background(
-                        RoundedRectangle(cornerRadius: AppRadius.lg)
-                            .fill(ColorPalette.cardBackgroundDark)
-                    )
                 }
 
                 // About Section
@@ -441,6 +479,7 @@ struct SettingsView: View {
             .padding(.bottom, AppSpacing.xl)
         }
     }
+    #endif
 
     private var appVersionDisplay: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
@@ -448,6 +487,37 @@ struct SettingsView: View {
         return build.isEmpty ? version : "\(version) (\(build))"
     }
 
+    private var isSyncing: Bool {
+        syncService.syncStatus == .syncing
+    }
+
+    private var syncStatusIcon: Image {
+        switch syncService.syncStatus {
+        case .disabled:
+            return Image(systemName: "icloud.slash")
+        case .syncing:
+            return Image(systemName: "arrow.triangle.2.circlepath")
+        case .synced:
+            return Image(systemName: "checkmark.icloud")
+        case .error:
+            return Image(systemName: "exclamationmark.icloud")
+        }
+    }
+
+    private var syncStatusColor: Color {
+        switch syncService.syncStatus {
+        case .disabled:
+            return ColorPalette.textMutedDark
+        case .syncing:
+            return ColorPalette.info
+        case .synced:
+            return ColorPalette.success
+        case .error:
+            return ColorPalette.error
+        }
+    }
+
+    #if !os(tvOS)
     private func createBackup() {
         if BackupService.shared.hasSecretsConfigured() {
             backupPassphraseMode = .export
@@ -691,32 +761,6 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .disabled(syncService.syncStatus == .syncing)
             }
-        }
-    }
-
-    private var syncStatusIcon: Image {
-        switch syncService.syncStatus {
-        case .disabled:
-            return Image(systemName: "icloud.slash")
-        case .syncing:
-            return Image(systemName: "arrow.triangle.2.circlepath")
-        case .synced:
-            return Image(systemName: "checkmark.icloud")
-        case .error:
-            return Image(systemName: "exclamationmark.icloud")
-        }
-    }
-
-    private var syncStatusColor: Color {
-        switch syncService.syncStatus {
-        case .disabled:
-            return ColorPalette.textMutedDark
-        case .syncing:
-            return ColorPalette.info
-        case .synced:
-            return ColorPalette.success
-        case .error:
-            return ColorPalette.error
         }
     }
     #endif

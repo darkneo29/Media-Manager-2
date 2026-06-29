@@ -28,7 +28,7 @@ struct ServerHealthWidget: View {
         if isConfigured {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
                 // Optional section header
-                if showHeader && !hasError {
+                if showHeader {
                     HStack {
                         Text("Server Health")
                             .font(AppTypography.title3())
@@ -45,12 +45,20 @@ struct ServerHealthWidget: View {
                 }
 
                 // Widget card (show loading/error/content)
-                if !hasError || isLoading {
-                    Button(action: { onTap?() }) {
-                        widgetContent
+                Button {
+                    if hasError {
+                        retryCount = 0
+                        hasError = false
+                        Task {
+                            await loadData()
+                        }
+                    } else {
+                        onTap?()
                     }
-                    .buttonStyle(PlainButtonStyle())
+                } label: {
+                    widgetContent
                 }
+                .buttonStyle(PlainButtonStyle())
             }
             .task {
                 await loadData()
@@ -82,11 +90,25 @@ struct ServerHealthWidget: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             // Header Row
             HStack {
-                Image(systemName: "server.rack")
+                Image(systemName: hasError ? "exclamationmark.triangle.fill" : "server.rack")
                     .font(.system(size: 18))
-                    .foregroundColor(ColorPalette.primary)
+                    .foregroundColor(hasError ? ColorPalette.error : ColorPalette.primary)
 
-                if let systemInfo = systemInfo {
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textMutedDark))
+                        .scaleEffect(0.7)
+                } else if hasError {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Server unavailable")
+                            .font(AppTypography.subheadline(.semibold))
+                            .foregroundColor(ColorPalette.textPrimaryDark)
+
+                        Text("Tap to retry")
+                            .font(AppTypography.caption2())
+                            .foregroundColor(ColorPalette.error)
+                    }
+                } else if let systemInfo = systemInfo {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(systemInfo.hostname.uppercased())
                             .font(AppTypography.subheadline(.semibold))
@@ -98,18 +120,14 @@ struct ServerHealthWidget: View {
                                 .frame(width: 6, height: 6)
                             Text(array?.state.isOnline == true ? "Online" : "Offline")
                                 .font(AppTypography.caption2())
-                                .foregroundColor(array?.state.isOnline == true ? ColorPalette.success : ColorPalette.warning)
+                            .foregroundColor(array?.state.isOnline == true ? ColorPalette.success : ColorPalette.warning)
                         }
                     }
-                } else if isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textMutedDark))
-                        .scaleEffect(0.7)
                 }
 
                 Spacer()
 
-                Image(systemName: "chevron.right")
+                Image(systemName: hasError ? "arrow.clockwise" : "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(ColorPalette.textMutedDark)
             }
