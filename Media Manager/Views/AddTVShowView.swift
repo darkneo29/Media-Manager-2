@@ -43,355 +43,17 @@ struct AddTVShowView: View {
         ZStack {
             ColorPalette.backgroundDark.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Search bar
-                HStack(spacing: AppSpacing.sm) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(ColorPalette.textMutedDark)
-                        TextField("Search for TV show...", text: $searchText)
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-                            .focused($isSearchFieldFocused)
-                            .submitLabel(.search)
-                            .onChange(of: searchText) { _, newValue in
-                                debouncedSearch(newValue)
-                            }
-                            .onSubmit {
-                                submitSearch()
-                            }
-                        if !searchText.isEmpty {
-                            Button {
-                                searchText = ""
-                                searchResults = []
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(ColorPalette.textMutedDark)
-                            }
-                        }
-                    }
-                    .padding(AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    Button {
-                        submitSearch()
-                    } label: {
-                        Text("Search")
-                            .font(AppTypography.subheadline(.semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, AppSpacing.md)
-                            .padding(.vertical, AppSpacing.sm)
-                            .background(ColorPalette.primary)
-                            .cornerRadius(AppRadius.md)
-                    }
-                    .disabled(searchText.isEmpty || isSearching)
-                    .opacity(searchText.isEmpty ? 0.5 : 1)
-                }
-                .padding(AppSpacing.md)
-
-                // Add options section
-                #if os(tvOS)
-                tvOSOptionsSection
-                #else
-                VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                    // Quality profile picker
-                    HStack {
-                        Text("Quality Profile")
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-
-                        Spacer()
-
-                        if isLoadingOptions {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .tint(ColorPalette.secondary)
-                        } else {
-                            Picker("Quality Profile", selection: $selectedQualityProfileId) {
-                                ForEach(qualityProfiles) { profile in
-                                    Text(profile.name).tag(profile.id)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(ColorPalette.secondary)
-                        }
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Root folder picker
-                    HStack {
-                        Text("Root Folder")
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-
-                        Spacer()
-
-                        if isLoadingOptions {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .tint(ColorPalette.secondary)
-                        } else {
-                            Picker("Root Folder", selection: $selectedRootFolderPath) {
-                                ForEach(rootFolders) { folder in
-                                    Text(folder.folderName).tag(folder.path)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .tint(ColorPalette.secondary)
-                        }
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Series type picker
-                    HStack {
-                        Text("Series Type")
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-
-                        Spacer()
-
-                        Picker("Series Type", selection: $seriesType) {
-                            ForEach(SonarrSeriesType.allCases) { type in
-                                Text(type.displayName).tag(type)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(ColorPalette.secondary)
-                        .disabled(isLoadingOptions)
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Monitor option picker
-                    HStack {
-                        Text("Monitor")
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-
-                        Spacer()
-
-                        Picker("Monitor Option", selection: $selectedMonitorOption) {
-                            ForEach(MonitorOption.allCases) { option in
-                                Text(option.displayName).tag(option)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(ColorPalette.secondary)
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Monitor new items picker
-                    HStack {
-                        Text("New Episodes")
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
-
-                        Spacer()
-
-                        Picker("New Episodes", selection: $monitorNewItems) {
-                            ForEach(SonarrNewItemMonitor.allCases) { option in
-                                Text(option.displayName).tag(option)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .tint(ColorPalette.secondary)
-                        .disabled(isLoadingOptions)
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    if !tags.isEmpty {
-                        TagSelectionMenuRow(
-                            title: "Tags",
-                            selectedLabel: selectedTagSummary,
-                            tags: tags,
-                            selectedTagIds: $selectedTagIds
-                        )
-                    }
-
-                    // Monitored toggle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Monitored")
-                                .font(AppTypography.subheadline())
-                                .foregroundColor(ColorPalette.textPrimaryDark)
-                            Text("Let Sonarr manage this series after adding")
-                                .font(AppTypography.caption2())
-                                .foregroundColor(ColorPalette.textMutedDark)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $monitored)
-                            .tint(ColorPalette.primary)
-                            .labelsHidden()
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Season folders toggle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Season Folders")
-                                .font(AppTypography.subheadline())
-                                .foregroundColor(ColorPalette.textPrimaryDark)
-                            Text("Organize episodes into season folders")
-                                .font(AppTypography.caption2())
-                                .foregroundColor(ColorPalette.textMutedDark)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $seasonFolder)
-                            .tint(ColorPalette.primary)
-                            .labelsHidden()
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Search for missing toggle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Search for Episodes")
-                                .font(AppTypography.subheadline())
-                                .foregroundColor(ColorPalette.textPrimaryDark)
-                            Text("Start searching when series is added")
-                                .font(AppTypography.caption2())
-                                .foregroundColor(ColorPalette.textMutedDark)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $searchForMissing)
-                            .tint(ColorPalette.primary)
-                            .labelsHidden()
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-
-                    // Search for cutoff unmet toggle
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Search Cutoff Unmet")
-                                .font(AppTypography.subheadline())
-                                .foregroundColor(ColorPalette.textPrimaryDark)
-                            Text("Also search monitored episodes below cutoff")
-                                .font(AppTypography.caption2())
-                                .foregroundColor(ColorPalette.textMutedDark)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $searchForCutoffUnmet)
-                            .tint(ColorPalette.primary)
-                            .labelsHidden()
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.vertical, AppSpacing.sm)
-                    .background(ColorPalette.cardBackgroundDark)
-                    .cornerRadius(AppRadius.md)
-                }
-                .padding(.horizontal, AppSpacing.md)
-                .padding(.bottom, AppSpacing.sm)
-                #endif
-
-                if let optionsErrorMessage {
-                    optionErrorBanner(message: optionsErrorMessage) {
-                        loadOptions(forceRefresh: true)
-                    }
-                }
-
-                Divider()
-                    .background(ColorPalette.divider)
-
-                // Content
-                if isSearching {
-                    Spacer()
-                    ProgressView()
-                        .tint(ColorPalette.primary)
-                    Text("Searching...")
-                        .font(AppTypography.caption1())
-                        .foregroundColor(ColorPalette.textMutedDark)
-                        .padding(.top, AppSpacing.sm)
-                    Spacer()
-                } else if let error = errorMessage {
-                    Spacer()
-                    VStack(spacing: AppSpacing.md) {
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.system(size: 40))
-                            .foregroundColor(ColorPalette.error)
-                        Text(error)
-                            .font(AppTypography.subheadline())
-                            .foregroundColor(ColorPalette.textSecondaryDark)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding()
-                    Spacer()
-                } else if searchResults.isEmpty && !searchText.isEmpty {
-                    Spacer()
-                    VStack(spacing: AppSpacing.md) {
-                        Image(systemName: "tv")
-                            .font(.system(size: 40))
-                            .foregroundColor(ColorPalette.textMutedDark)
-                        Text("No results found")
-                            .font(AppTypography.headline())
-                            .foregroundColor(ColorPalette.textSecondaryDark)
-                        Text("Try a different search term")
-                            .font(AppTypography.caption1())
-                            .foregroundColor(ColorPalette.textMutedDark)
-                    }
-                    Spacer()
-                } else if searchResults.isEmpty {
-                    Spacer()
-                    VStack(spacing: AppSpacing.md) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 40))
-                            .foregroundColor(ColorPalette.textMutedDark)
-                        Text("Search for TV shows")
-                            .font(AppTypography.headline())
-                            .foregroundColor(ColorPalette.textSecondaryDark)
-                        Text("Find shows to add to your library")
-                            .font(AppTypography.caption1())
-                            .foregroundColor(ColorPalette.textMutedDark)
-                    }
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: AppSpacing.sm) {
-                            ForEach(searchResults) { show in
-                                TVShowSearchResultCard(show: show, isAdding: addingShowId == show.tvdbId) {
-                                    addShow(show)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, AppSpacing.md)
-                        .padding(.top, AppSpacing.sm)
-                        .padding(.bottom, AppSpacing.xl)
-                    }
-                }
-            }
+            #if os(tvOS)
+            tvOSContent
+            #else
+            iOSContent
+            #endif
         }
         .navigationTitle("Add TV Show")
         .navBarTitleDisplayMode(.inline)
+        #if !os(tvOS)
+        .toolbar(.hidden, for: .tabBar)
+        #endif
         .onAppear {
             loadOptions()
         }
@@ -402,6 +64,451 @@ struct AddTVShowView: View {
                 navigationPath.append(show)
             }
         }
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: AppSpacing.sm) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(ColorPalette.textMutedDark)
+                TextField("Search for TV show...", text: $searchText)
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+                    .focused($isSearchFieldFocused)
+                    .submitLabel(.search)
+                    .onChange(of: searchText) { _, newValue in
+                        debouncedSearch(newValue)
+                    }
+                    .onSubmit {
+                        submitSearch()
+                    }
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                        searchResults = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(ColorPalette.textMutedDark)
+                    }
+                }
+            }
+            .padding(AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            Button {
+                submitSearch()
+            } label: {
+                Text("Search")
+                    .font(AppTypography.subheadline(.semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, AppSpacing.md)
+                    .padding(.vertical, AppSpacing.sm)
+                    .background(ColorPalette.primary)
+                    .cornerRadius(AppRadius.md)
+            }
+            .disabled(searchText.isEmpty || isSearching)
+            .opacity(searchText.isEmpty ? 0.5 : 1)
+        }
+        .padding(AppSpacing.md)
+    }
+
+    #if !os(tvOS)
+    private var iOSContent: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                searchBar
+                iOSOptionsSection
+                optionsErrorSection
+                Divider()
+                    .background(ColorPalette.divider)
+                iOSSearchContent
+            }
+            .padding(.bottom, AppSpacing.xl)
+        }
+        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var iOSOptionsSection: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            // Quality profile picker
+            HStack {
+                Text("Quality Profile")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                if isLoadingOptions {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(ColorPalette.secondary)
+                } else {
+                    Picker("Quality Profile", selection: $selectedQualityProfileId) {
+                        ForEach(qualityProfiles) { profile in
+                            Text(profile.name).tag(profile.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(ColorPalette.secondary)
+                }
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Root folder picker
+            HStack {
+                Text("Root Folder")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                if isLoadingOptions {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(ColorPalette.secondary)
+                } else {
+                    Picker("Root Folder", selection: $selectedRootFolderPath) {
+                        ForEach(rootFolders) { folder in
+                            Text(folder.folderName).tag(folder.path)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(ColorPalette.secondary)
+                }
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Series type picker
+            HStack {
+                Text("Series Type")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("Series Type", selection: $seriesType) {
+                    ForEach(SonarrSeriesType.allCases) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Monitor option picker
+            HStack {
+                Text("Monitor")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("Monitor Option", selection: $selectedMonitorOption) {
+                    ForEach(MonitorOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Monitor new items picker
+            HStack {
+                Text("New Episodes")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+
+                Spacer()
+
+                Picker("New Episodes", selection: $monitorNewItems) {
+                    ForEach(SonarrNewItemMonitor.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
+                .disabled(isLoadingOptions)
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            if !tags.isEmpty {
+                TagSelectionMenuRow(
+                    title: "Tags",
+                    selectedLabel: selectedTagSummary,
+                    tags: tags,
+                    selectedTagIds: $selectedTagIds
+                )
+            }
+
+            // Monitored toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Monitored")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Let Sonarr manage this series after adding")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $monitored)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Season folders toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Season Folders")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Organize episodes into season folders")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $seasonFolder)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Search for missing toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Search for Episodes")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Start searching when series is added")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $searchForMissing)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+
+            // Search for cutoff unmet toggle
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Search Cutoff Unmet")
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                    Text("Also search monitored episodes below cutoff")
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.textMutedDark)
+                }
+
+                Spacer()
+
+                Toggle("", isOn: $searchForCutoffUnmet)
+                    .tint(ColorPalette.primary)
+                    .labelsHidden()
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.vertical, AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+        }
+        .padding(.horizontal, AppSpacing.md)
+        .padding(.bottom, AppSpacing.sm)
+    }
+
+    @ViewBuilder
+    private var iOSSearchContent: some View {
+        if isSearching {
+            loadingStateView
+        } else if let error = errorMessage {
+            stateView(
+                icon: "exclamationmark.triangle",
+                iconColor: ColorPalette.error,
+                title: error,
+                subtitle: nil
+            )
+        } else if searchResults.isEmpty && !searchText.isEmpty {
+            stateView(
+                icon: "tv",
+                iconColor: ColorPalette.textMutedDark,
+                title: "No results found",
+                subtitle: "Try a different search term"
+            )
+        } else if searchResults.isEmpty {
+            stateView(
+                icon: "magnifyingglass",
+                iconColor: ColorPalette.textMutedDark,
+                title: "Search for TV shows",
+                subtitle: "Find shows to add to your library"
+            )
+        } else {
+            LazyVStack(spacing: AppSpacing.sm) {
+                ForEach(searchResults) { show in
+                    TVShowSearchResultCard(show: show, isAdding: addingShowId == show.tvdbId) {
+                        addShow(show)
+                    }
+                }
+            }
+            .padding(.horizontal, AppSpacing.md)
+            .padding(.top, AppSpacing.sm)
+        }
+    }
+    #endif
+
+    #if os(tvOS)
+    private var tvOSContent: some View {
+        VStack(spacing: 0) {
+            searchBar
+            tvOSOptionsSection
+            optionsErrorSection
+            Divider()
+                .background(ColorPalette.divider)
+            tvOSSearchContent
+        }
+    }
+
+    @ViewBuilder
+    private var tvOSSearchContent: some View {
+        if isSearching {
+            Spacer()
+            ProgressView()
+                .tint(ColorPalette.primary)
+            Text("Searching...")
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textMutedDark)
+                .padding(.top, AppSpacing.sm)
+            Spacer()
+        } else if let error = errorMessage {
+            Spacer()
+            VStack(spacing: AppSpacing.md) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 40))
+                    .foregroundColor(ColorPalette.error)
+                Text(error)
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textSecondaryDark)
+                    .multilineTextAlignment(.center)
+            }
+            .padding()
+            Spacer()
+        } else if searchResults.isEmpty && !searchText.isEmpty {
+            Spacer()
+            VStack(spacing: AppSpacing.md) {
+                Image(systemName: "tv")
+                    .font(.system(size: 40))
+                    .foregroundColor(ColorPalette.textMutedDark)
+                Text("No results found")
+                    .font(AppTypography.headline())
+                    .foregroundColor(ColorPalette.textSecondaryDark)
+                Text("Try a different search term")
+                    .font(AppTypography.caption1())
+                    .foregroundColor(ColorPalette.textMutedDark)
+            }
+            Spacer()
+        } else if searchResults.isEmpty {
+            Spacer()
+            VStack(spacing: AppSpacing.md) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 40))
+                    .foregroundColor(ColorPalette.textMutedDark)
+                Text("Search for TV shows")
+                    .font(AppTypography.headline())
+                    .foregroundColor(ColorPalette.textSecondaryDark)
+                Text("Find shows to add to your library")
+                    .font(AppTypography.caption1())
+                    .foregroundColor(ColorPalette.textMutedDark)
+            }
+            Spacer()
+        } else {
+            ScrollView {
+                LazyVStack(spacing: AppSpacing.sm) {
+                    ForEach(searchResults) { show in
+                        TVShowSearchResultCard(show: show, isAdding: addingShowId == show.tvdbId) {
+                            addShow(show)
+                        }
+                    }
+                }
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.top, AppSpacing.sm)
+                .padding(.bottom, AppSpacing.xl)
+            }
+        }
+    }
+    #endif
+
+    @ViewBuilder
+    private var optionsErrorSection: some View {
+        if let optionsErrorMessage {
+            optionErrorBanner(message: optionsErrorMessage) {
+                loadOptions(forceRefresh: true)
+            }
+        }
+    }
+
+    private var loadingStateView: some View {
+        VStack(spacing: AppSpacing.sm) {
+            ProgressView()
+                .tint(ColorPalette.primary)
+            Text("Searching...")
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textMutedDark)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .padding()
+    }
+
+    private func stateView(icon: String, iconColor: Color, title: String, subtitle: String?) -> some View {
+        VStack(spacing: AppSpacing.md) {
+            Image(systemName: icon)
+                .font(.system(size: 40))
+                .foregroundColor(iconColor)
+            Text(title)
+                .font(subtitle == nil ? AppTypography.subheadline() : AppTypography.headline())
+                .foregroundColor(ColorPalette.textSecondaryDark)
+                .multilineTextAlignment(.center)
+            if let subtitle {
+                Text(subtitle)
+                    .font(AppTypography.caption1())
+                    .foregroundColor(ColorPalette.textMutedDark)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+        .padding()
     }
 
     #if os(tvOS)
