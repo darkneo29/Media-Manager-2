@@ -7,27 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		65346D220F7B4E16AAE11D93 /* Media Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81DE9594B794C48961BD790 /* Media Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CFA4EA822F02B40000D5AC7F /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CFA4EA812F02B40000D5AC7F /* WidgetKit.framework */; };
 		CFA4EA842F02B40000D5AC7F /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CFA4EA832F02B40000D5AC7F /* SwiftUI.framework */; };
 		CFA4EA932F02B40000D5AC7F /* upcomingWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		65346D220F7B4E16AAE11D93 /* Media Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D81DE9594B794C48961BD790 /* Media Watch App.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CFTVOS0012F02B50000D5AC7F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = CFTVOS0022F02B50000D5AC7F /* LaunchScreen.storyboard */; platformFilter = ios; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		CFA4EA912F02B40000D5AC7F /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = CFD772E12EFC8ED1005E5D93 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = CFA4EA7E2F02B40000D5AC7F;
-			remoteInfo = upcomingWidgetExtension;
-		};
 		21D78C403B674F82B24C556D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = CFD772E12EFC8ED1005E5D93 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = BC01A9A89F4149F0B7A97D94;
 			remoteInfo = "Media Watch App";
+		};
+		CFA4EA912F02B40000D5AC7F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CFD772E12EFC8ED1005E5D93 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CFA4EA7E2F02B40000D5AC7F;
+			remoteInfo = upcomingWidgetExtension;
 		};
 		CFD772F72EFC8ED4005E5D93 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -46,17 +46,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		CFA4EA982F02B40000D5AC7F /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				CFA4EA932F02B40000D5AC7F /* upcomingWidgetExtension.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		200DE2D33D1E4D4A83D110E3 /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -68,17 +57,28 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CFA4EA982F02B40000D5AC7F /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CFA4EA932F02B40000D5AC7F /* upcomingWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = upcomingWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA4EA812F02B40000D5AC7F /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
 		CFA4EA832F02B40000D5AC7F /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
-		D81DE9594B794C48961BD790 /* Media Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Media Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD772E92EFC8ED2005E5D93 /* Media Manager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Media Manager.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD772F62EFC8ED4005E5D93 /* Media ManagerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Media ManagerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFD773002EFC8ED4005E5D93 /* Media ManagerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Media ManagerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFTVOS0022F02B50000D5AC7F /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		D81DE9594B794C48961BD790 /* Media Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Media Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -92,6 +92,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		8C0234A92FC2497EBC08C14B /* Media Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Media Watch App";
+			sourceTree = "<group>";
+		};
 		CFA4EA852F02B40000D5AC7F /* UpcomingWidget */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -100,19 +105,9 @@
 			path = UpcomingWidget;
 			sourceTree = "<group>";
 		};
-		8C0234A92FC2497EBC08C14B /* Media Watch App */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "Media Watch App";
-			sourceTree = "<group>";
-		};
 		CFD772EB2EFC8ED2005E5D93 /* Media Manager */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Media Manager";
-			sourceTree = "<group>";
-		};
-		E848A4AF41C84876860447B3 /* MediaWatchShared */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MediaWatchShared;
 			sourceTree = "<group>";
 		};
 		CFD772F92EFC8ED4005E5D93 /* Media ManagerTests */ = {
@@ -125,22 +120,27 @@
 			path = "Media ManagerUITests";
 			sourceTree = "<group>";
 		};
+		E848A4AF41C84876860447B3 /* MediaWatchShared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MediaWatchShared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		CB0B226D7A684BBB8BF82F92 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		CFA4EA7C2F02B40000D5AC7F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				CFA4EA842F02B40000D5AC7F /* SwiftUI.framework in Frameworks */,
 				CFA4EA822F02B40000D5AC7F /* WidgetKit.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		CB0B226D7A684BBB8BF82F92 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,6 +207,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BC01A9A89F4149F0B7A97D94 /* Media Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */;
+			buildPhases = (
+				083E0848B9B64DBC8CADCDE0 /* Sources */,
+				CB0B226D7A684BBB8BF82F92 /* Frameworks */,
+				FE295275FFEA4A598DDB17DA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8C0234A92FC2497EBC08C14B /* Media Watch App */,
+				E848A4AF41C84876860447B3 /* MediaWatchShared */,
+			);
+			name = "Media Watch App";
+			packageProductDependencies = (
+			);
+			productName = "Media Watch App";
+			productReference = D81DE9594B794C48961BD790 /* Media Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 		CFA4EA7E2F02B40000D5AC7F /* upcomingWidgetExtension */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = CFA4EA952F02B40000D5AC7F /* Build configuration list for PBXNativeTarget "upcomingWidgetExtension" */;
@@ -228,29 +251,6 @@
 			productName = upcomingWidgetExtension;
 			productReference = CFA4EA7F2F02B40000D5AC7F /* upcomingWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
-		};
-		BC01A9A89F4149F0B7A97D94 /* Media Watch App */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */;
-			buildPhases = (
-				083E0848B9B64DBC8CADCDE0 /* Sources */,
-				CB0B226D7A684BBB8BF82F92 /* Frameworks */,
-				FE295275FFEA4A598DDB17DA /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			fileSystemSynchronizedGroups = (
-				E848A4AF41C84876860447B3 /* MediaWatchShared */,
-				8C0234A92FC2497EBC08C14B /* Media Watch App */,
-			);
-			name = "Media Watch App";
-			packageProductDependencies = (
-			);
-			productName = "Media Watch App";
-			productReference = D81DE9594B794C48961BD790 /* Media Watch App.app */;
-			productType = "com.apple.product-type.application";
 		};
 		CFD772E82EFC8ED2005E5D93 /* Media Manager */ = {
 			isa = PBXNativeTarget;
@@ -335,10 +335,10 @@
 				LastSwiftUpdateCheck = 2620;
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
-					CFA4EA7E2F02B40000D5AC7F = {
+					BC01A9A89F4149F0B7A97D94 = {
 						CreatedOnToolsVersion = 26.2;
 					};
-					BC01A9A89F4149F0B7A97D94 = {
+					CFA4EA7E2F02B40000D5AC7F = {
 						CreatedOnToolsVersion = 26.2;
 					};
 					CFD772E82EFC8ED2005E5D93 = {
@@ -385,13 +385,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		FE295275FFEA4A598DDB17DA /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		CFD772E72EFC8ED2005E5D93 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -414,17 +407,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FE295275FFEA4A598DDB17DA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		CFA4EA7B2F02B40000D5AC7F /* Sources */ = {
+		083E0848B9B64DBC8CADCDE0 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		083E0848B9B64DBC8CADCDE0 /* Sources */ = {
+		CFA4EA7B2F02B40000D5AC7F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -455,17 +455,17 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		CFA4EA922F02B40000D5AC7F /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			platformFilter = ios;
-			target = CFA4EA7E2F02B40000D5AC7F /* upcomingWidgetExtension */;
-			targetProxy = CFA4EA912F02B40000D5AC7F /* PBXContainerItemProxy */;
-		};
 		3CF1BEA1EAD14D0BA7D859F4 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			platformFilter = ios;
 			target = BC01A9A89F4149F0B7A97D94 /* Media Watch App */;
 			targetProxy = 21D78C403B674F82B24C556D /* PBXContainerItemProxy */;
+		};
+		CFA4EA922F02B40000D5AC7F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			platformFilter = ios;
+			target = CFA4EA7E2F02B40000D5AC7F /* upcomingWidgetExtension */;
+			targetProxy = CFA4EA912F02B40000D5AC7F /* PBXContainerItemProxy */;
 		};
 		CFD772F82EFC8ED4005E5D93 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -480,6 +480,77 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		35E46190B6824CE1B804A3B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 9;
+				DEVELOPMENT_TEAM = WV4EJ58H63;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		A80C72AF3956486584F2E404 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 9;
+				DEVELOPMENT_TEAM = WV4EJ58H63;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.7;
+				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
 		CFA4EA962F02B40000D5AC7F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -487,7 +558,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = UpcomingWidget/UpcomingWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = UpcomingWidget/Info.plist;
@@ -521,7 +592,7 @@
 				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
 				CODE_SIGN_ENTITLEMENTS = UpcomingWidget/UpcomingWidget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = UpcomingWidget/Info.plist;
@@ -545,77 +616,6 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		A80C72AF3956486584F2E404 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
-				DEVELOPMENT_TEAM = WV4EJ58H63;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				WATCHOS_DEPLOYMENT_TARGET = 10.0;
-			};
-			name = Debug;
-		};
-		35E46190B6824CE1B804A3B4 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
-				DEVELOPMENT_TEAM = WV4EJ58H63;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Dragon Media";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.myandroidtv.MediaManager;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-				);
-				MARKETING_VERSION = 2.7;
-				PRODUCT_BUNDLE_IDENTIFIER = com.myandroidtv.MediaManager.watchkitapp;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = watchos;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "watchos watchsimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 4;
-				VALIDATE_PRODUCT = YES;
-				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
@@ -741,14 +741,14 @@
 		CFD7730B2EFC8ED4005E5D93 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				APS_ENVIRONMENT = development;
 				CODE_SIGN_ENTITLEMENTS = "Media Manager/Media Manager.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=appletvos*]" = "Media Manager/Media Manager-tvOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=appletvsimulator*]" = "Media Manager/Media Manager-tvOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -789,14 +789,14 @@
 		CFD7730C2EFC8ED4005E5D93 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				APS_ENVIRONMENT = production;
 				CODE_SIGN_ENTITLEMENTS = "Media Manager/Media Manager.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=appletvos*]" = "Media Manager/Media Manager-tvOS.entitlements";
 				"CODE_SIGN_ENTITLEMENTS[sdk=appletvsimulator*]" = "Media Manager/Media Manager-tvOS.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEVELOPMENT_TEAM = WV4EJ58H63;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -948,15 +948,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A80C72AF3956486584F2E404 /* Debug */,
-				35E46190B6824CE1B804A3B4 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		CFD772E42EFC8ED1005E5D93 /* Build configuration list for PBXProject "Media Manager" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -989,6 +980,15 @@
 			buildConfigurations = (
 				CFD773112EFC8ED4005E5D93 /* Debug */,
 				CFD773122EFC8ED4005E5D93 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F6C7C348F944408DBB57A440 /* Build configuration list for PBXNativeTarget "Media Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A80C72AF3956486584F2E404 /* Debug */,
+				35E46190B6824CE1B804A3B4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

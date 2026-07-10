@@ -15,7 +15,7 @@ struct DownloadsView: View {
     @State private var queueErrorMessage: String?
     @State private var historyErrorMessage: String?
     @State private var showClearHistoryAlert = false
-    // refreshTimer removed - using .task modifier instead
+    @State private var isViewVisible = false
 
     // Activity queue state
     @State private var radarrQueue: [QueueItem] = []
@@ -36,11 +36,9 @@ struct DownloadsView: View {
     @State private var cutoffEpisodes: [Episode] = []
     @State private var isLoadingWanted = false
 
-    // App lifecycle tracking for timer optimization
+    // App lifecycle tracking keeps live polling limited to the visible queue.
     @Environment(\.scenePhase) private var scenePhase
-    @State private var lastRefreshTime: Date?
     @State private var loadedTabs: Set<Int> = []
-    private let minimumRefreshInterval: TimeInterval = 2 // Prevent rapid refreshes
 
     private var isSabConfigured: Bool {
         configuration.isSabNZBConfigured
@@ -57,9 +55,11 @@ struct DownloadsView: View {
     private var shouldPollActiveDownloads: Bool {
         DownloadsPollingPolicy.shouldPoll(
             isActiveTab: isActiveTab,
+            isViewVisible: isViewVisible,
+            isViewingActiveQueue: selectedTab == 0,
             scenePhase: scenePhase,
             isSabConfigured: isSabConfigured
-        ) && selectedTab == 0
+        )
     }
 
     private var totalActivityCount: Int {
@@ -199,28 +199,39 @@ struct DownloadsView: View {
             } message: {
                 Text(activityErrorMessage ?? "The request could not be completed.")
             }
+            .onAppear {
+                isViewVisible = true
+            }
+            .onDisappear {
+                isViewVisible = false
+            }
             .task(id: isActiveTab) {
-                guard isActiveTab else { return }
+                guard isActiveTab, selectedTab != 0 else { return }
                 await loadSelectedTabData()
             }
             .task(id: shouldPollActiveDownloads) {
                 guard shouldPollActiveDownloads else { return }
                 await refreshQueue()
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(4))
+                    do {
+                        try await Task.sleep(for: .seconds(DownloadsPollingPolicy.refreshIntervalSeconds))
+                    } catch {
+                        return
+                    }
                     guard !Task.isCancelled else { return }
-                    await throttledRefresh()
+                    guard shouldPollActiveDownloads else { return }
+                    await refreshQueue()
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active && isActiveTab {
+                if newPhase == .active && isActiveTab && selectedTab != 0 {
                     Task {
                         await loadSelectedTabData(force: true)
                     }
                 }
             }
             .onChange(of: selectedTab) { _, newValue in
-                if isActiveTab {
+                if isActiveTab && newValue != 0 {
                     Task {
                         await loadSelectedTabData(force: loadedTabs.contains(newValue))
                     }
@@ -554,6 +565,20 @@ struct DownloadsView: View {
 
             Spacer()
 
+            if shouldPollActiveDownloads {
+                HStack(spacing: AppSpacing.xxs) {
+                    Circle()
+                        .fill(ColorPalette.success)
+                        .frame(width: 7, height: 7)
+
+                    Text("Live")
+                        .font(AppTypography.caption2(.semibold))
+                        .foregroundColor(ColorPalette.success)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Live updates every five seconds")
+            }
+
             // Speed indicator
             if currentSpeed > 0 {
                 HStack(spacing: AppSpacing.xxs) {
@@ -743,9 +768,7 @@ struct DownloadsView: View {
 
     private func loadData() async {
         guard isSabConfigured else { return }
-        isLoadingQueue = true
         await refreshQueue()
-        isLoadingQueue = false
     }
 
     private func loadHistory() async {
@@ -942,30 +965,24 @@ struct DownloadsView: View {
         }
     }
 
-    /// Throttled refresh to prevent rapid API calls
-    private func throttledRefresh() async {
-        if let lastRefresh = lastRefreshTime,
-           Date().timeIntervalSince(lastRefresh) < minimumRefreshInterval {
-            // Skip refresh if too soon after last one
-            return
-        }
-        await refreshQueue()
-    }
-
     private func refreshQueue() async {
+        guard !isLoadingQueue else { return }
+        isLoadingQueue = true
+        defer { isLoadingQueue = false }
+
         do {
             let queue = try await SabNZBService.shared.fetchQueue()
-            await MainActor.run {
-                activeDownloads = queue.downloads
-                isQueuePaused = queue.paused
-                currentSpeed = queue.speed
-                queueErrorMessage = nil
-                lastRefreshTime = Date()
-            }
+            guard !Task.isCancelled else { return }
+            activeDownloads = queue.downloads
+            isQueuePaused = queue.paused
+            currentSpeed = queue.speed
+            queueErrorMessage = nil
+        } catch is CancellationError {
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            return
         } catch {
-            await MainActor.run {
-                queueErrorMessage = "Failed to load downloads: \(error.localizedDescription)"
-            }
+            queueErrorMessage = "Failed to load downloads: \(error.localizedDescription)"
         }
     }
 

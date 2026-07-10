@@ -76,6 +76,12 @@ enum WhatsNewCatalog {
                     description: "Downloads now includes Radarr and Sonarr queue, history, and blocklist views plus Missing and Cutoff Unmet lists with direct search actions."
                 ),
                 WhatsNewEntry(
+                    id: "live-sabnzb-queue",
+                    kind: .improvement,
+                    title: "Live SABnzbd Queue",
+                    description: "Active downloads load immediately and update every five seconds while the Downloads tab is visible, with uncached queue data and a clear Live indicator."
+                ),
+                WhatsNewEntry(
                     id: "complete-sonarr-calendar",
                     kind: .improvement,
                     title: "Complete TV Episode Calendar",

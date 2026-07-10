@@ -32,8 +32,9 @@ class SabNZBService {
 
     /// Creates a URLRequest for SabNZB with a timeout.
     private func authenticatedRequest(url: URL) -> URLRequest {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.timeoutInterval = 15
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         return request
     }
 

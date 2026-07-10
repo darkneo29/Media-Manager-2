@@ -247,11 +247,24 @@ struct Media_ManagerTests {
 
     @Test
     func downloadsPollingPolicyOnlyPollsForActiveForegroundConfiguredDownloadsTab() {
-        #expect(DownloadsPollingPolicy.shouldPoll(isActiveTab: true, scenePhase: .active, isSabConfigured: true))
-        #expect(!DownloadsPollingPolicy.shouldPoll(isActiveTab: false, scenePhase: .active, isSabConfigured: true))
-        #expect(!DownloadsPollingPolicy.shouldPoll(isActiveTab: true, scenePhase: .background, isSabConfigured: true))
-        #expect(!DownloadsPollingPolicy.shouldPoll(isActiveTab: true, scenePhase: .inactive, isSabConfigured: true))
-        #expect(!DownloadsPollingPolicy.shouldPoll(isActiveTab: true, scenePhase: .active, isSabConfigured: false))
+        let shouldPoll: (Bool, Bool, Bool, ScenePhase, Bool) -> Bool = {
+            DownloadsPollingPolicy.shouldPoll(
+                isActiveTab: $0,
+                isViewVisible: $1,
+                isViewingActiveQueue: $2,
+                scenePhase: $3,
+                isSabConfigured: $4
+            )
+        }
+
+        #expect(DownloadsPollingPolicy.refreshIntervalSeconds == 5)
+        #expect(shouldPoll(true, true, true, .active, true))
+        #expect(!shouldPoll(false, true, true, .active, true))
+        #expect(!shouldPoll(true, false, true, .active, true))
+        #expect(!shouldPoll(true, true, false, .active, true))
+        #expect(!shouldPoll(true, true, true, .background, true))
+        #expect(!shouldPoll(true, true, true, .inactive, true))
+        #expect(!shouldPoll(true, true, true, .active, false))
     }
 
     @Test
