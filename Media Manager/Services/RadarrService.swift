@@ -47,7 +47,7 @@ class RadarrService {
     /// Creates an authenticated URLRequest with API key header and timeout
     private func authenticatedRequest(url: URL, apiKey: String? = nil) -> URLRequest {
         var request = URLRequest(url: url)
-        request.timeoutInterval = 15
+        request.timeoutInterval = 30
         request.setValue(apiKey ?? self.apiKey, forHTTPHeaderField: "X-Api-Key")
         return request
     }
@@ -167,6 +167,7 @@ class RadarrService {
         rootFolderPath: String = "/movies/",
         minimumAvailability: RadarrMinimumAvailability = .released,
         monitored: Bool = true,
+        monitorOption: RadarrMonitorOption = .movieOnly,
         searchForMovie: Bool = true,
         tagIds: [Int] = []
     ) async throws -> Movie {
@@ -189,6 +190,7 @@ class RadarrService {
             "tags": tagIds,
             "addOptions": [
                 "addMethod": "manual",
+                "monitor": monitorOption.rawValue,
                 "searchForMovie": searchForMovie
             ]
         ]
@@ -277,7 +279,7 @@ class RadarrService {
     }
 
     // Update (PUT) implementation
-    func updateMovie(movie: Movie) async throws {
+    func updateMovie(movie: Movie, moveFiles: Bool = false) async throws {
         // Fetch fresh movie data from API to get all required fields
         guard let getURL = URL(string: "\(baseURL)/movie/\(movie.id)") else {
             throw URLError(.badURL)
@@ -305,11 +307,14 @@ class RadarrService {
         if let tags = movie.tags {
             movieDict["tags"] = tags
         }
+        if let rootFolderPath = movie.rootFolderPath {
+            movieDict["rootFolderPath"] = rootFolderPath
+        }
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: movieDict)
 
-        guard let url = URL(string: "\(baseURL)/movie/\(movie.id)") else {
+        guard let url = URL(string: "\(baseURL)/movie/\(movie.id)?moveFiles=\(moveFiles)") else {
             throw URLError(.badURL)
         }
 
@@ -325,6 +330,82 @@ class RadarrService {
 
         // Invalidate movies cache after update
         await CacheManager.shared.remove(CacheManager.CacheKey.radarrMovies)
+    }
+
+    /// Uses Radarr's native movie editor so multi-select actions are one atomic request.
+    func editMovies(
+        ids: [Int],
+        monitored: Bool? = nil,
+        qualityProfileId: Int? = nil,
+        minimumAvailability: RadarrMinimumAvailability? = nil,
+        rootFolderPath: String? = nil,
+        tagIds: [Int]? = nil,
+        moveFiles: Bool = false
+    ) async throws {
+        guard !ids.isEmpty, let url = URL(string: "\(baseURL)/movie/editor") else {
+            throw URLError(.badURL)
+        }
+
+        var payload: [String: Any] = ["movieIds": ids, "moveFiles": moveFiles]
+        if let monitored { payload["monitored"] = monitored }
+        if let qualityProfileId { payload["qualityProfileId"] = qualityProfileId }
+        if let minimumAvailability { payload["minimumAvailability"] = minimumAvailability.rawValue }
+        if let rootFolderPath { payload["rootFolderPath"] = rootFolderPath }
+        if let tagIds {
+            payload["tags"] = tagIds
+            payload["applyTags"] = "replace"
+        }
+
+        try await sendJSONRequest(url: url, method: "PUT", payload: payload)
+        await CacheManager.shared.remove(CacheManager.CacheKey.radarrMovies)
+    }
+
+    func deleteMovies(ids: [Int], deleteFiles: Bool, addImportExclusion: Bool = false) async throws {
+        guard !ids.isEmpty, let url = URL(string: "\(baseURL)/movie/editor") else {
+            throw URLError(.badURL)
+        }
+        try await sendJSONRequest(url: url, method: "DELETE", payload: [
+            "movieIds": ids,
+            "deleteFiles": deleteFiles,
+            "addImportExclusion": addImportExclusion
+        ])
+        await CacheManager.shared.remove(CacheManager.CacheKey.radarrMovies)
+    }
+
+    func searchForMovies(ids: [Int]) async throws {
+        guard !ids.isEmpty else { return }
+        try await runCommand(name: "MoviesSearch", values: ["movieIds": ids])
+    }
+
+    func refreshMovie(movieId: Int) async throws {
+        try await runCommand(name: "RefreshMovie", values: ["movieIds": [movieId]])
+    }
+
+    func renameMovie(movieId: Int) async throws {
+        try await runCommand(name: "RenameMovie", values: ["movieIds": [movieId]])
+    }
+
+    private func runCommand(name: String, values: [String: Any] = [:]) async throws {
+        guard let url = URL(string: "\(baseURL)/command") else { throw URLError(.badURL) }
+        var payload = values
+        payload["name"] = name
+        try await sendJSONRequest(url: url, method: "POST", payload: payload)
+    }
+
+    private func sendJSONRequest(url: URL, method: String, payload: [String: Any]) async throws {
+        var request = authenticatedRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            if let errors = try? JSONDecoder().decode([RadarrErrorResponse].self, from: data),
+               let message = errors.first?.errorMessage {
+                throw RadarrError.apiError(message)
+            }
+            throw URLError(.badServerResponse)
+        }
     }
 
     /// Tests the connection to the Radarr server using the provided URL and API key
@@ -674,6 +755,66 @@ class RadarrService {
         await CacheManager.shared.remove(CacheManager.CacheKey.radarrQueue)
     }
 
+    // MARK: - History and Blocklist
+
+    func fetchHistory(pageSize: Int = 50) async throws -> [ArrActivityRecord] {
+        try await fetchActivityRecords(endpoint: "history", pageSize: pageSize)
+    }
+
+    func fetchBlocklist(pageSize: Int = 50) async throws -> [ArrActivityRecord] {
+        try await fetchActivityRecords(endpoint: "blocklist", pageSize: pageSize)
+    }
+
+    func deleteBlocklistItem(id: Int) async throws {
+        guard let url = URL(string: "\(baseURL)/blocklist/\(id)") else { throw URLError(.badURL) }
+        var request = authenticatedRequest(url: url)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+    }
+
+    private func fetchActivityRecords(endpoint: String, pageSize: Int) async throws -> [ArrActivityRecord] {
+        var components = URLComponents(string: "\(baseURL)/\(endpoint)")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "pageSize", value: String(pageSize)),
+            URLQueryItem(name: "sortKey", value: "date"),
+            URLQueryItem(name: "sortDirection", value: "descending")
+        ]
+        guard let url = components?.url else { throw URLError(.badURL) }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(ArrActivityResponse.self, from: data).records
+    }
+
+    // MARK: - Collections
+
+    func fetchCollections() async throws -> [RadarrCollection] {
+        guard let url = URL(string: "\(baseURL)/collection") else { throw URLError(.badURL) }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode([RadarrCollection].self, from: data)
+    }
+
+    func updateCollection(
+        id: Int,
+        monitored: Bool? = nil,
+        monitorMovies: Bool? = nil,
+        searchOnAdd: Bool? = nil
+    ) async throws {
+        guard let url = URL(string: "\(baseURL)/collection") else { throw URLError(.badURL) }
+        var payload: [String: Any] = ["collectionIds": [id]]
+        if let monitored { payload["monitored"] = monitored }
+        if let monitorMovies { payload["monitorMovies"] = monitorMovies }
+        if let searchOnAdd { payload["searchOnAdd"] = searchOnAdd }
+        try await sendJSONRequest(url: url, method: "PUT", payload: payload)
+    }
+
     // MARK: - Wanted/Missing
 
     /// Fetches movies that are missing (monitored, released, but no file)
@@ -693,28 +834,23 @@ class RadarrService {
 
     /// Fetches movies that are wanted (monitored, released, but no file) using parallel fetching
     func fetchWanted() async throws -> [Movie] {
-        let movies = try await fetchMovies()
+        try await fetchPagedMovies(endpoint: "wanted/missing")
+    }
 
-        // Filter for monitored movies that should have files
-        let candidateMovies = movies.filter { $0.monitored && ($0.status == "released" || $0.status == "inCinemas") }
+    func fetchCutoffUnmet() async throws -> [Movie] {
+        try await fetchPagedMovies(endpoint: "wanted/cutoff")
+    }
 
-        // Check via moviefiles endpoint in parallel for more accuracy
-        return try await withThrowingTaskGroup(of: (Movie, Bool).self, returning: [Movie].self) { group in
-            for movie in candidateMovies {
-                group.addTask {
-                    let files = try await self.fetchMovieFiles(movieId: movie.id)
-                    return (movie, files.isEmpty)
-                }
-            }
-
-            var wantedMovies: [Movie] = []
-            for try await (movie, isEmpty) in group {
-                if isEmpty {
-                    wantedMovies.append(movie)
-                }
-            }
-            return wantedMovies
+    private func fetchPagedMovies(endpoint: String) async throws -> [Movie] {
+        guard let url = URL(string: "\(baseURL)/\(endpoint)?page=1&pageSize=100&sortKey=title&sortDirection=ascending") else {
+            throw URLError(.badURL)
         }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        struct Response: Codable { let records: [Movie] }
+        return try JSONDecoder().decode(Response.self, from: data).records
     }
 
     // MARK: - Backups

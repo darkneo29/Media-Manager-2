@@ -1,6 +1,22 @@
 import SwiftUI
 import Combine
 
+enum AddBehaviorPreset: String, CaseIterable, Identifiable {
+    case downloadNow
+    case monitorOnly
+    case addOnly
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .downloadNow: return "Download Now"
+        case .monitorOnly: return "Monitor Only"
+        case .addOnly: return "Add Only"
+        }
+    }
+}
+
 struct AddMovieView: View {
     @Binding var navigationPath: NavigationPath
     @State private var searchText = ""
@@ -17,15 +33,19 @@ struct AddMovieView: View {
     @State private var selectedQualityProfileId: Int = 1
     @State private var selectedRootFolderPath: String = ""
     @State private var selectedMinimumAvailability: RadarrMinimumAvailability = .released
-    @State private var monitored: Bool = true
+    @State private var selectedMonitorOption: RadarrMonitorOption = .movieOnly
     @State private var selectedTagIds: Set<Int> = []
     @State private var tags: [MediaTag] = []
+    @State private var tagsUnavailable = false
+    @State private var optionsExpanded = false
+    @State private var selectedMovieForConfirmation: MovieLookup?
     @State private var isLoadingOptions = true
     @State private var optionsErrorMessage: String?
     @State private var searchForMovie: Bool = true
 
     // Debouncing support
     @State private var searchTask: Task<Void, Never>?
+    @State private var activeSearchTask: Task<Void, Never>?
     private let debounceDelay: UInt64 = 300_000_000 // 300ms in nanoseconds
     @FocusState private var isSearchFieldFocused: Bool
 
@@ -94,13 +114,18 @@ struct AddMovieView: View {
                 #if os(tvOS)
                 tvOSOptionsSection
                 #else
-                iOSOptionsSection
+                addOptionsDisclosure
                 #endif
 
                 if let optionsErrorMessage {
                     optionErrorBanner(message: optionsErrorMessage) {
                         loadOptions(forceRefresh: true)
                     }
+                } else if tagsUnavailable {
+                    optionWarningBanner(
+                        message: "Tags could not be refreshed. Your saved tag defaults will be preserved.",
+                        retry: { loadOptions(forceRefresh: true) }
+                    )
                 }
 
                 Divider()
@@ -116,7 +141,7 @@ struct AddMovieView: View {
                         .foregroundColor(ColorPalette.textMutedDark)
                         .padding(.top, AppSpacing.sm)
                     Spacer()
-                } else if let error = errorMessage {
+                } else if let error = errorMessage, searchResults.isEmpty && tmdbResults.isEmpty {
                     Spacer()
                     VStack(spacing: AppSpacing.md) {
                         Image(systemName: "exclamationmark.triangle")
@@ -160,10 +185,18 @@ struct AddMovieView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: AppSpacing.sm) {
+                            if let errorMessage {
+                                inlineSearchError(errorMessage)
+                            }
+
                             // Radarr results
                             ForEach(searchResults) { movie in
-                                SearchResultCard(movie: movie, isAdding: addingMovieId == movie.tmdbId) {
-                                    addMovie(movie)
+                                SearchResultCard(
+                                    movie: movie,
+                                    isAdding: addingMovieId == movie.tmdbId,
+                                    isDisabled: addingMovieId != nil
+                                ) {
+                                    selectedMovieForConfirmation = movie
                                 }
                             }
 
@@ -197,6 +230,8 @@ struct AddMovieView: View {
             loadOptions()
         }
         .onDisappear {
+            searchTask?.cancel()
+            activeSearchTask?.cancel()
             persistCurrentPreferences()
             if let movie = pendingMovie {
                 pendingMovie = nil
@@ -208,11 +243,84 @@ struct AddMovieView: View {
                 // Movie was added — refresh isn't needed since we'll dismiss
             }
         }
+        .sheet(item: $selectedMovieForConfirmation) { movie in
+            AddConfirmationSheet(
+                title: movie.title,
+                year: movie.year,
+                posterURL: posterURL(for: movie),
+                destination: "Radarr",
+                optionsSummary: movieOptionsSummary,
+                onConfirm: {
+                    selectedMovieForConfirmation = nil
+                    addMovie(movie)
+                },
+                onReviewOptions: {
+                    selectedMovieForConfirmation = nil
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        optionsExpanded = true
+                    }
+                }
+            )
+        }
     }
 
     // MARK: - iOS Options Section
 
     #if !os(tvOS)
+    private var addOptionsDisclosure: some View {
+        VStack(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        optionsExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: AppSpacing.sm) {
+                        Image(systemName: "slider.horizontal.3")
+                            .foregroundColor(ColorPalette.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add Options")
+                                .font(AppTypography.subheadline(.semibold))
+                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            Text(movieOptionsSummary)
+                                .font(AppTypography.caption2())
+                                .foregroundColor(ColorPalette.textMutedDark)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: optionsExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(ColorPalette.textMutedDark)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    ForEach(AddBehaviorPreset.allCases) { preset in
+                        Button(preset.title) { applyPreset(preset) }
+                    }
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                        .foregroundColor(ColorPalette.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(ColorPalette.primary.opacity(0.12))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Add preset")
+            }
+            .padding(AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+            .padding(.horizontal, AppSpacing.md)
+
+            if optionsExpanded {
+                iOSOptionsSection
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.bottom, AppSpacing.sm)
+    }
+
     private var iOSOptionsSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             // Quality profile picker
@@ -300,22 +408,21 @@ struct AddMovieView: View {
                 )
             }
 
-            // Monitored toggle
+            // Monitoring option
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Monitored")
-                        .font(AppTypography.subheadline())
-                        .foregroundColor(ColorPalette.textPrimaryDark)
-                    Text("Let Radarr manage this movie after adding")
-                        .font(AppTypography.caption2())
-                        .foregroundColor(ColorPalette.textMutedDark)
-                }
+                Text("Monitor")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
 
                 Spacer()
 
-                Toggle("", isOn: $monitored)
-                    .tint(ColorPalette.primary)
-                    .labelsHidden()
+                Picker("Monitor", selection: $selectedMonitorOption) {
+                    ForEach(RadarrMonitorOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
             }
             .padding(.horizontal, AppSpacing.md)
             .padding(.vertical, AppSpacing.sm)
@@ -348,6 +455,50 @@ struct AddMovieView: View {
         .padding(.bottom, AppSpacing.sm)
     }
     #endif
+
+    private var movieOptionsSummary: String {
+        let profile = qualityProfiles.first(where: { $0.id == selectedQualityProfileId })?.name ?? "Profile"
+        let folder = rootFolders.first(where: { $0.path == selectedRootFolderPath })?.folderName ?? "Folder"
+        let behavior = searchForMovie ? "Search now" : selectedMonitorOption.displayName
+        return "\(profile) · \(folder) · \(behavior)"
+    }
+
+    private func applyPreset(_ preset: AddBehaviorPreset) {
+        switch preset {
+        case .downloadNow:
+            selectedMonitorOption = .movieOnly
+            searchForMovie = true
+        case .monitorOnly:
+            selectedMonitorOption = .movieOnly
+            searchForMovie = false
+        case .addOnly:
+            selectedMonitorOption = .none
+            searchForMovie = false
+        }
+    }
+
+    private func posterURL(for movie: MovieLookup) -> URL? {
+        movie.images?.first(where: { $0.coverType == "poster" }).flatMap { image in
+            if let remote = image.remoteUrl, let url = URL(string: remote) {
+                return url
+            }
+            return RadarrService.shared.imageURL(for: image.url)
+        }
+    }
+
+    private func inlineSearchError(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(ColorPalette.error)
+            Text(message)
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textSecondaryDark)
+            Spacer()
+        }
+        .padding(AppSpacing.sm)
+        .background(ColorPalette.error.opacity(0.12))
+        .cornerRadius(AppRadius.md)
+    }
 
     // MARK: - tvOS Options Section
 
@@ -407,8 +558,11 @@ struct AddMovieView: View {
 
             TVAddMovieToggleRow(
                 title: "Monitored",
-                subtitle: "Let Radarr manage this movie after adding",
-                isOn: $monitored
+                subtitle: selectedMonitorOption.displayName,
+                isOn: Binding(
+                    get: { selectedMonitorOption.isMonitored },
+                    set: { selectedMonitorOption = $0 ? .movieOnly : .none }
+                )
             )
 
             // Search for movie toggle
@@ -430,14 +584,15 @@ struct AddMovieView: View {
             do {
                 async let profilesTask = RadarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
                 async let foldersTask = RadarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
-                async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags(forceRefresh: forceRefresh)) ?? []
+                async let tagsTask: [MediaTag]? = try? await RadarrService.shared.fetchTags(forceRefresh: forceRefresh)
 
                 let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
-                    tags = fetchedTags
+                    tags = fetchedTags ?? []
+                    tagsUnavailable = fetchedTags == nil
                     optionsErrorMessage = nil
 
                     let preferences = AddMediaPreferences.shared.radarrSettings(
@@ -448,7 +603,7 @@ struct AddMovieView: View {
                     selectedQualityProfileId = preferences.qualityProfileId
                     selectedRootFolderPath = preferences.rootFolderPath
                     selectedMinimumAvailability = preferences.minimumAvailability
-                    monitored = preferences.monitored
+                    selectedMonitorOption = preferences.monitorOption
                     searchForMovie = preferences.searchForMovie
                     selectedTagIds = Set(preferences.tagIds)
 
@@ -467,6 +622,7 @@ struct AddMovieView: View {
     private func debouncedSearch(_ query: String) {
         // Cancel any existing debounce task
         searchTask?.cancel()
+        activeSearchTask?.cancel()
 
         // Don't search if query is empty
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -495,10 +651,11 @@ struct AddMovieView: View {
     private func performSearch() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        activeSearchTask?.cancel()
         isSearching = true
         errorMessage = nil
 
-        Task {
+        activeSearchTask = Task {
             do {
                 async let radarrTask = RadarrService.shared.searchMovies(term: query)
                 async let tmdbTask = TMDBService.shared.searchMovies(query: query)
@@ -517,12 +674,15 @@ struct AddMovieView: View {
                 let filteredTMDB = tmdbSearchResults.filter { !radarrTmdbIds.contains($0.id) }
 
                 await MainActor.run {
+                    guard !Task.isCancelled,
+                          searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
                     searchResults = radarrResults
                     tmdbResults = filteredTMDB
                     isSearching = false
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     errorMessage = error.localizedDescription
                     isSearching = false
                 }
@@ -539,6 +699,7 @@ struct AddMovieView: View {
     @State private var pendingMovie: Movie?
 
     private func addMovie(_ movie: MovieLookup) {
+        guard addingMovieId == nil else { return }
         guard canAddMovie else {
             errorMessage = optionsErrorMessage ?? "Load a quality profile and root folder before adding a movie."
             return
@@ -553,7 +714,8 @@ struct AddMovieView: View {
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
                     minimumAvailability: selectedMinimumAvailability,
-                    monitored: monitored,
+                    monitored: selectedMonitorOption.isMonitored,
+                    monitorOption: selectedMonitorOption,
                     searchForMovie: searchForMovie,
                     tagIds: selectedTagIds.sorted()
                 )
@@ -577,7 +739,8 @@ struct AddMovieView: View {
             qualityProfileId: selectedQualityProfileId,
             rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
             minimumAvailability: selectedMinimumAvailability,
-            monitored: monitored,
+            monitored: selectedMonitorOption.isMonitored,
+            monitorOption: selectedMonitorOption,
             searchForMovie: searchForMovie,
             tagIds: selectedTagIds.sorted()
         )
@@ -605,6 +768,85 @@ struct AddMovieView: View {
         .cornerRadius(AppRadius.md)
         .padding(.horizontal, AppSpacing.md)
         .padding(.bottom, AppSpacing.sm)
+    }
+
+    private func optionWarningBanner(message: String, retry: @escaping () -> Void) -> some View {
+        optionErrorBanner(message: message, retry: retry)
+    }
+}
+
+struct AddConfirmationSheet: View {
+    let title: String
+    let year: Int
+    let posterURL: URL?
+    let destination: String
+    let optionsSummary: String
+    let onConfirm: () -> Void
+    let onReviewOptions: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: AppSpacing.lg) {
+                CachedAsyncImage(url: posterURL, width: 120, height: 180)
+                    .cornerRadius(AppRadius.md)
+
+                VStack(spacing: AppSpacing.xs) {
+                    Text(title)
+                        .font(AppTypography.title3())
+                        .foregroundColor(ColorPalette.textPrimaryDark)
+                        .multilineTextAlignment(.center)
+                    Text(String(year))
+                        .font(AppTypography.subheadline())
+                        .foregroundColor(ColorPalette.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    Text("ADDING TO \(destination.uppercased())")
+                        .font(AppTypography.caption2(.semibold))
+                        .foregroundColor(ColorPalette.textMutedDark)
+                    Text(optionsSummary)
+                        .font(AppTypography.body())
+                        .foregroundColor(ColorPalette.textSecondaryDark)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(AppSpacing.md)
+                .background(ColorPalette.cardBackgroundDark)
+                .cornerRadius(AppRadius.md)
+
+                Button {
+                    dismiss()
+                    onConfirm()
+                } label: {
+                    Label("Add to \(destination)", systemImage: "plus.circle.fill")
+                        .font(AppTypography.body(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(AppSpacing.md)
+                        .background(ColorPalette.primary)
+                        .cornerRadius(AppRadius.md)
+                }
+
+                Button("Review Options") {
+                    dismiss()
+                    onReviewOptions()
+                }
+                .font(AppTypography.body(.medium))
+                .foregroundColor(ColorPalette.secondary)
+
+                Spacer(minLength: 0)
+            }
+            .padding(AppSpacing.lg)
+            .background(ColorPalette.backgroundDark.ignoresSafeArea())
+            .navigationTitle("Confirm Add")
+            .navBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -761,6 +1003,7 @@ struct TVTagSelectionMenuRow: View {
 struct SearchResultCard: View {
     let movie: MovieLookup
     let isAdding: Bool
+    var isDisabled: Bool = false
     let onAdd: () -> Void
 
     @Environment(\.openURL) private var openURL
@@ -853,7 +1096,8 @@ struct SearchResultCard: View {
                                 .cornerRadius(AppRadius.sm)
                         }
                     }
-                    .disabled(isAdding)
+                    .disabled(isAdding || isDisabled)
+                    .opacity(isDisabled && !isAdding ? 0.55 : 1)
                 }
             }
         }

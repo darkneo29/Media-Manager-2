@@ -397,12 +397,30 @@ class LibraryStateManager: ObservableObject {
 
     /// Add a movie to local state (optimistic update after add)
     func addMovieLocally(_ movie: Movie) {
-        movies.append(movie)
+        if let index = movies.firstIndex(where: { $0.id == movie.id }) {
+            movies[index] = movie
+        } else {
+            movies.append(movie)
+        }
     }
 
     /// Add a show to local state (optimistic update after add)
     func addShowLocally(_ show: TVShow) {
-        tvShows.append(show)
+        if let index = tvShows.firstIndex(where: { $0.id == show.id }) {
+            tvShows[index] = show
+        } else {
+            tvShows.append(show)
+        }
+    }
+
+    /// Replace an existing movie with fresh server state.
+    func updateMovieLocally(_ movie: Movie) {
+        addMovieLocally(movie)
+    }
+
+    /// Replace an existing series with fresh server state.
+    func updateShowLocally(_ show: TVShow) {
+        addShowLocally(show)
     }
 
     /// Remove a movie from local state

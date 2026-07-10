@@ -429,9 +429,7 @@ struct TVShowListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for show in selectedShows() {
-                    try await SonarrService.shared.updateShowMonitoring(seriesId: show.id, monitored: monitored)
-                }
+                try await SonarrService.shared.editShows(ids: Array(selectedShowIds), monitored: monitored)
                 await libraryManager.loadShows(forceRefresh: true)
                 await MainActor.run {
                     selectedShowIds.removeAll()
@@ -451,9 +449,7 @@ struct TVShowListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for show in selectedShows() {
-                    try await SonarrService.shared.searchForShow(seriesId: show.id)
-                }
+                try await SonarrService.shared.searchForShows(ids: Array(selectedShowIds))
                 await MainActor.run {
                     selectedShowIds.removeAll()
                     isSelectionMode = false
@@ -472,11 +468,7 @@ struct TVShowListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for show in selectedShows() {
-                    var updated = show
-                    updated.qualityProfileId = profileId
-                    try await SonarrService.shared.updateShow(show: updated)
-                }
+                try await SonarrService.shared.editShows(ids: Array(selectedShowIds), qualityProfileId: profileId)
                 await libraryManager.loadShows(forceRefresh: true)
                 await MainActor.run {
                     selectedShowIds.removeAll()
@@ -496,9 +488,7 @@ struct TVShowListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for show in selectedShows() {
-                    try await SonarrService.shared.deleteShow(id: show.id, deleteFiles: deleteFiles)
-                }
+                try await SonarrService.shared.deleteShows(ids: Array(selectedShowIds), deleteFiles: deleteFiles)
                 await libraryManager.loadShows(forceRefresh: true)
                 await MainActor.run {
                     selectedShowIds.removeAll()

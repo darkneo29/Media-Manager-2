@@ -54,6 +54,9 @@ struct CalendarView: View {
     @State private var displayedMonth: Date = Date()
     @State private var navigationPath = NavigationPath()
     @State private var isRefreshing = false
+    @State private var calendarEpisodes: [Episode] = []
+    @State private var hasLoadedEpisodeCalendar = false
+    @State private var calendarDataVersion = 0
 
     // MARK: - Cached Event Data
 
@@ -69,6 +72,7 @@ struct CalendarView: View {
     /// Track data version to detect changes
     @State private var lastMoviesRevision: Int = -1
     @State private var lastShowsRevision: Int = -1
+    @State private var lastCalendarDataVersion: Int = -1
     @State private var lastDisplayedMonth: Date?
 
     private let calendar = Calendar.current
@@ -106,6 +110,9 @@ struct CalendarView: View {
             #else
             iOSCalendarLayout
             #endif
+        }
+        .task(id: displayedMonth) {
+            await loadEpisodeCalendar()
         }
     }
 
@@ -426,13 +433,20 @@ struct CalendarView: View {
         let showsRevision = libraryState.tvShowsRevision
 
         // Only rebuild if data actually changed
-        guard moviesRevision != lastMoviesRevision || showsRevision != lastShowsRevision else { return }
+        guard moviesRevision != lastMoviesRevision ||
+                showsRevision != lastShowsRevision ||
+                calendarDataVersion != lastCalendarDataVersion else { return }
 
         lastMoviesRevision = moviesRevision
         lastShowsRevision = showsRevision
+        lastCalendarDataVersion = calendarDataVersion
 
         // Build all events
-        cachedEvents = CalendarEventBuilder.allEvents(movies: libraryState.movies, tvShows: libraryState.tvShows)
+        let movieEvents = CalendarEventBuilder.eventsFromMovies(libraryState.movies)
+        let tvEvents = hasLoadedEpisodeCalendar
+            ? CalendarEventBuilder.eventsFromEpisodes(calendarEpisodes, shows: libraryState.tvShows)
+            : CalendarEventBuilder.eventsFromTVShows(libraryState.tvShows)
+        cachedEvents = (movieEvents + tvEvents).sorted { $0.date < $1.date }
 
         // Build date-indexed dictionary for O(1) lookup
         var byDate: [DateComponents: [CalendarEvent]] = [:]
@@ -444,6 +458,29 @@ struct CalendarView: View {
 
         // Rebuild day data for current month
         rebuildDayDataCache()
+    }
+
+    private func loadEpisodeCalendar() async {
+        guard ConfigurationManager.shared.isSonarrConfigured,
+              let month = calendar.dateInterval(of: .month, for: displayedMonth) else { return }
+        let start = calendar.date(byAdding: .day, value: -7, to: month.start) ?? month.start
+        let end = calendar.date(byAdding: .day, value: 7, to: month.end) ?? month.end
+        do {
+            let episodes = try await SonarrService.shared.fetchCalendar(start: start, end: end)
+            await MainActor.run {
+                calendarEpisodes = episodes
+                hasLoadedEpisodeCalendar = true
+                calendarDataVersion += 1
+                rebuildEventCacheIfNeeded()
+            }
+        } catch {
+            // Keep the next-airing fallback when the calendar endpoint is unavailable.
+            await MainActor.run {
+                hasLoadedEpisodeCalendar = false
+                calendarDataVersion += 1
+                rebuildEventCacheIfNeeded()
+            }
+        }
     }
 
     /// Rebuild the pre-computed day data for the displayed month grid

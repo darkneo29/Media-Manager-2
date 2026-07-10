@@ -357,7 +357,7 @@ final class WatchSnapshotService: NSObject {
 
                 let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
                 let rootFolders = try await RadarrService.shared.fetchRootFolders()
-                let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+                let tags = try? await RadarrService.shared.fetchTags()
                 let preferences = AddMediaPreferences.shared.radarrSettings(
                     profiles: qualityProfiles,
                     rootFolders: rootFolders,
@@ -378,6 +378,7 @@ final class WatchSnapshotService: NSObject {
                     rootFolderPath: preferences.rootFolderPath,
                     minimumAvailability: preferences.minimumAvailability,
                     monitored: preferences.monitored,
+                    monitorOption: preferences.monitorOption,
                     searchForMovie: preferences.searchForMovie,
                     tagIds: preferences.tagIds
                 )
@@ -399,7 +400,7 @@ final class WatchSnapshotService: NSObject {
 
                 let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
                 let rootFolders = try await SonarrService.shared.fetchRootFolders()
-                let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+                let tags = try? await SonarrService.shared.fetchTags()
                 let preferences = AddMediaPreferences.shared.sonarrSettings(
                     profiles: qualityProfiles,
                     rootFolders: rootFolders,

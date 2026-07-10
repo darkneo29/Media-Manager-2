@@ -132,7 +132,7 @@ struct AddTVShowIntent: AppIntent {
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
-            let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+            let tags = try? await SonarrService.shared.fetchTags()
             var preferences = AddMediaPreferences.shared.sonarrSettings(
                 profiles: qualityProfiles,
                 rootFolders: rootFolders,
@@ -224,7 +224,7 @@ struct QuickAddTVShowIntent: AppIntent {
             // Get defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
-            let tags = (try? await SonarrService.shared.fetchTags()) ?? []
+            let tags = try? await SonarrService.shared.fetchTags()
             let preferences = AddMediaPreferences.shared.sonarrSettings(
                 profiles: qualityProfiles,
                 rootFolders: rootFolders,

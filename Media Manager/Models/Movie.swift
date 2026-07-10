@@ -27,6 +27,24 @@ enum RadarrMinimumAvailability: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+enum RadarrMonitorOption: String, CaseIterable, Codable, Identifiable {
+    case movieOnly
+    case movieAndCollection
+    case none
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .movieOnly: return "Movie Only"
+        case .movieAndCollection: return "Movie & Collection"
+        case .none: return "None"
+        }
+    }
+
+    var isMonitored: Bool { self != .none }
+}
+
 struct Movie: Codable, Identifiable, Hashable {
     private static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -361,4 +379,64 @@ struct QueueResponse: Codable {
     let pageSize: Int
     let totalRecords: Int
     let records: [QueueItem]
+}
+
+// MARK: - Radarr / Sonarr Activity Models
+
+struct ArrActivityRecord: Codable, Identifiable, Hashable {
+    let id: Int
+    let movieId: Int?
+    let seriesId: Int?
+    let episodeId: Int?
+    let sourceTitle: String?
+    let date: String?
+    let eventType: String?
+    let indexer: String?
+    let message: String?
+
+    var displayTitle: String {
+        let title = sourceTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? "Unknown release" : title
+    }
+
+    var displayEvent: String {
+        guard let eventType, !eventType.isEmpty else { return "Blocked" }
+        return eventType
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2", options: .regularExpression)
+            .capitalized
+    }
+
+    var parsedDate: Date? {
+        guard let date else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: date) ?? ISO8601DateFormatter().date(from: date)
+    }
+}
+
+struct ArrActivityResponse: Codable {
+    let page: Int
+    let pageSize: Int
+    let totalRecords: Int
+    let records: [ArrActivityRecord]
+}
+
+// MARK: - Radarr Collections
+
+struct RadarrCollection: Codable, Identifiable, Hashable {
+    let id: Int
+    let title: String?
+    let tmdbId: Int
+    var monitored: Bool
+    var rootFolderPath: String?
+    var qualityProfileId: Int
+    var searchOnAdd: Bool
+    let missingMovies: Int
+    var tags: [Int]?
+
+    var displayTitle: String {
+        let value = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return value.isEmpty ? "Untitled Collection" : value
+    }
 }

@@ -21,9 +21,19 @@ struct DownloadsView: View {
     @State private var radarrQueue: [QueueItem] = []
     @State private var sonarrQueue: [QueueItem] = []
     @State private var isLoadingActivity = false
+    @State private var activitySection = 0
+    @State private var radarrHistory: [ArrActivityRecord] = []
+    @State private var sonarrHistory: [ArrActivityRecord] = []
+    @State private var radarrBlocklist: [ArrActivityRecord] = []
+    @State private var sonarrBlocklist: [ArrActivityRecord] = []
+    @State private var activityErrorMessage: String?
 
     // Wanted/Missing state
+    @State private var wantedSection = 0
+    @State private var wantedMovies: [Movie] = []
     @State private var wantedEpisodes: [Episode] = []
+    @State private var cutoffMovies: [Movie] = []
+    @State private var cutoffEpisodes: [Episode] = []
     @State private var isLoadingWanted = false
 
     // App lifecycle tracking for timer optimization
@@ -63,7 +73,7 @@ struct DownloadsView: View {
         case 1:
             return isRadarrConfigured || isSonarrConfigured
         case 2:
-            return isSonarrConfigured
+            return isRadarrConfigured || isSonarrConfigured
         default:
             return false
         }
@@ -115,8 +125,9 @@ struct DownloadsView: View {
                         } else {
                             Text("Activity").tag(1)
                         }
-                        if wantedEpisodes.count > 0 {
-                            Text("Wanted (\(wantedEpisodes.count))").tag(2)
+                        let wantedCount = wantedMovies.count + wantedEpisodes.count
+                        if wantedCount > 0 {
+                            Text("Wanted (\(wantedCount))").tag(2)
                         } else {
                             Text("Wanted").tag(2)
                         }
@@ -180,6 +191,14 @@ struct DownloadsView: View {
             } message: {
                 Text("Are you sure you want to clear all download history? This cannot be undone.")
             }
+            .alert("Activity Error", isPresented: Binding(
+                get: { activityErrorMessage != nil },
+                set: { if !$0 { activityErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { activityErrorMessage = nil }
+            } message: {
+                Text(activityErrorMessage ?? "The request could not be completed.")
+            }
             .task(id: isActiveTab) {
                 guard isActiveTab else { return }
                 await loadSelectedTabData()
@@ -223,54 +242,115 @@ struct DownloadsView: View {
     // MARK: - Activity View
 
     private var activityView: some View {
-        Group {
+        VStack(spacing: 0) {
             if !isRadarrConfigured && !isSonarrConfigured {
                 PlaceholderView(
                     icon: "gear",
                     title: "No Services Configured",
                     description: "Configure Radarr or Sonarr in Settings to see download activity"
                 )
-            } else if isLoadingActivity && radarrQueue.isEmpty && sonarrQueue.isEmpty {
-                loadingView
-            } else if radarrQueue.isEmpty && sonarrQueue.isEmpty {
-                emptyActivityView
             } else {
-                ScrollView {
-                    LazyVStack(spacing: AppSpacing.sm) {
-                        // Radarr queue
-                        if !radarrQueue.isEmpty {
-                            DownloadsSectionHeader(title: "Movies", icon: "film.fill")
-                                .padding(.horizontal, AppSpacing.md)
-
-                            ForEach(radarrQueue) { item in
-                                ActivityQueueCard(item: item, type: .movie, onRemove: {
-                                    await removeFromRadarrQueue(item)
-                                })
-                            }
-                            .padding(.horizontal, AppSpacing.md)
-                        }
-
-                        // Sonarr queue
-                        if !sonarrQueue.isEmpty {
-                            DownloadsSectionHeader(title: "TV Shows", icon: "tv.fill")
-                                .padding(.horizontal, AppSpacing.md)
-                                .padding(.top, radarrQueue.isEmpty ? 0 : AppSpacing.md)
-
-                            ForEach(sonarrQueue) { item in
-                                ActivityQueueCard(item: item, type: .tvShow, onRemove: {
-                                    await removeFromSonarrQueue(item)
-                                })
-                            }
-                            .padding(.horizontal, AppSpacing.md)
-                        }
-                    }
-                    .padding(.top, AppSpacing.sm)
-                    .padding(.bottom, AppSpacing.xl)
+                Picker("Activity", selection: $activitySection) {
+                    Text("Queue").tag(0)
+                    Text("History").tag(1)
+                    Text("Blocklist").tag(2)
                 }
-                .refreshable {
-                    await refreshActivityData()
+                .pickerStyle(.segmented)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.sm)
+
+                if isLoadingActivity && radarrQueue.isEmpty && sonarrQueue.isEmpty && radarrHistory.isEmpty && sonarrHistory.isEmpty {
+                    loadingView
+                } else {
+                    switch activitySection {
+                    case 0:
+                        queueActivityView
+                    case 1:
+                        arrRecordsView(radarr: radarrHistory, sonarr: sonarrHistory, isBlocklist: false)
+                    default:
+                        arrRecordsView(radarr: radarrBlocklist, sonarr: sonarrBlocklist, isBlocklist: true)
+                    }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var queueActivityView: some View {
+        if radarrQueue.isEmpty && sonarrQueue.isEmpty {
+            emptyActivityView
+        } else {
+            ScrollView {
+                LazyVStack(spacing: AppSpacing.sm) {
+                    if !radarrQueue.isEmpty {
+                        DownloadsSectionHeader(title: "Movies", icon: "film.fill")
+                            .padding(.horizontal, AppSpacing.md)
+                        ForEach(radarrQueue) { item in
+                            ActivityQueueCard(item: item, type: .movie) { blocklist in
+                                await removeFromRadarrQueue(item, blocklist: blocklist)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                    }
+                    if !sonarrQueue.isEmpty {
+                        DownloadsSectionHeader(title: "TV Shows", icon: "tv.fill")
+                            .padding(.horizontal, AppSpacing.md)
+                            .padding(.top, radarrQueue.isEmpty ? 0 : AppSpacing.md)
+                        ForEach(sonarrQueue) { item in
+                            ActivityQueueCard(item: item, type: .tvShow) { blocklist in
+                                await removeFromSonarrQueue(item, blocklist: blocklist)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                    }
+                }
+                .padding(.top, AppSpacing.sm)
+                .padding(.bottom, AppSpacing.xl)
+            }
+            .refreshable { await refreshActivityData() }
+        }
+    }
+
+    @ViewBuilder
+    private func arrRecordsView(
+        radarr: [ArrActivityRecord],
+        sonarr: [ArrActivityRecord],
+        isBlocklist: Bool
+    ) -> some View {
+        if radarr.isEmpty && sonarr.isEmpty {
+            PlaceholderView(
+                icon: isBlocklist ? "hand.raised" : "clock.arrow.circlepath",
+                title: isBlocklist ? "Blocklist is Empty" : "No Recent History",
+                description: isBlocklist ? "Rejected releases will appear here" : "Radarr and Sonarr activity will appear here"
+            )
+        } else {
+            ScrollView {
+                LazyVStack(spacing: AppSpacing.sm) {
+                    if !radarr.isEmpty {
+                        DownloadsSectionHeader(title: "Movies", icon: "film.fill")
+                            .padding(.horizontal, AppSpacing.md)
+                        ForEach(radarr) { record in
+                            ArrActivityCard(record: record, type: .movie, canDelete: isBlocklist) {
+                                await deleteBlocklistRecord(record, type: .movie)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                    }
+                    if !sonarr.isEmpty {
+                        DownloadsSectionHeader(title: "TV Shows", icon: "tv.fill")
+                            .padding(.horizontal, AppSpacing.md)
+                            .padding(.top, radarr.isEmpty ? 0 : AppSpacing.md)
+                        ForEach(sonarr) { record in
+                            ArrActivityCard(record: record, type: .tvShow, canDelete: isBlocklist) {
+                                await deleteBlocklistRecord(record, type: .tvShow)
+                            }
+                        }
+                        .padding(.horizontal, AppSpacing.md)
+                    }
+                }
+                .padding(.bottom, AppSpacing.xl)
+            }
+            .refreshable { await refreshActivityData() }
         }
     }
 
@@ -315,34 +395,58 @@ struct DownloadsView: View {
     // MARK: - Wanted View
 
     private var wantedView: some View {
-        Group {
-            if !isSonarrConfigured {
+        VStack(spacing: 0) {
+            if !isRadarrConfigured && !isSonarrConfigured {
                 PlaceholderView(
                     icon: "gear",
-                    title: "Sonarr Not Configured",
-                    description: "Configure Sonarr in Settings to see wanted episodes"
+                    title: "No Services Configured",
+                    description: "Configure Radarr or Sonarr to see missing and cutoff-unmet media"
                 )
-            } else if isLoadingWanted && wantedEpisodes.isEmpty {
-                loadingView
-            } else if wantedEpisodes.isEmpty {
-                emptyWantedView
             } else {
-                ScrollView {
-                    LazyVStack(spacing: AppSpacing.sm) {
-                        ForEach(wantedEpisodes) { episode in
-                            WantedEpisodeCard(episode: episode, onSearch: {
-                                await searchForEpisode(episode)
-                            })
-                        }
-                    }
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.top, AppSpacing.sm)
-                    .padding(.bottom, AppSpacing.xl)
+                Picker("Wanted", selection: $wantedSection) {
+                    Text("Missing").tag(0)
+                    Text("Cutoff Unmet").tag(1)
                 }
-                .refreshable {
-                    await refreshWantedData()
+                .pickerStyle(.segmented)
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, AppSpacing.sm)
+
+                if isLoadingWanted && wantedMovies.isEmpty && wantedEpisodes.isEmpty && cutoffMovies.isEmpty && cutoffEpisodes.isEmpty {
+                    loadingView
+                } else if wantedSection == 0 {
+                    wantedRecordsView(movies: wantedMovies, episodes: wantedEpisodes)
+                } else {
+                    wantedRecordsView(movies: cutoffMovies, episodes: cutoffEpisodes)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func wantedRecordsView(movies: [Movie], episodes: [Episode]) -> some View {
+        if movies.isEmpty && episodes.isEmpty {
+            emptyWantedView
+        } else {
+            ScrollView {
+                LazyVStack(spacing: AppSpacing.sm) {
+                    if !movies.isEmpty {
+                        DownloadsSectionHeader(title: "Movies", icon: "film.fill")
+                        ForEach(movies) { movie in
+                            WantedMovieCard(movie: movie) { await searchForMovie(movie) }
+                        }
+                    }
+                    if !episodes.isEmpty {
+                        DownloadsSectionHeader(title: "TV Episodes", icon: "tv.fill")
+                            .padding(.top, movies.isEmpty ? 0 : AppSpacing.sm)
+                        ForEach(episodes) { episode in
+                            WantedEpisodeCard(episode: episode) { await searchForEpisode(episode) }
+                        }
+                    }
+                }
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.bottom, AppSpacing.xl)
+            }
+            .refreshable { await refreshWantedData() }
         }
     }
 
@@ -374,7 +478,7 @@ struct DownloadsView: View {
                 .font(AppTypography.headline())
                 .foregroundColor(ColorPalette.textPrimaryDark)
 
-            Text("No missing episodes to download")
+            Text(wantedSection == 0 ? "No missing media to download" : "Everything meets its quality cutoff")
                 .font(AppTypography.subheadline())
                 .foregroundColor(ColorPalette.textSecondaryDark)
 
@@ -658,14 +762,15 @@ struct DownloadsView: View {
     }
 
     private func loadWantedData() async {
-        guard isSonarrConfigured else { return }
+        guard isRadarrConfigured || isSonarrConfigured else { return }
         isLoadingWanted = true
         await refreshWantedData()
         isLoadingWanted = false
     }
 
     private func refreshActivityData() async {
-        // Fetch both queues in parallel
+        await MainActor.run { activityErrorMessage = nil }
+        // Fetch queue, history, and blocklist in parallel for both services.
         await withTaskGroup(of: Void.self) { group in
             if isRadarrConfigured {
                 group.addTask {
@@ -675,9 +780,23 @@ struct DownloadsView: View {
                             self.radarrQueue = queue
                         }
                     } catch {
-                        #if DEBUG
-                        print("Error loading Radarr queue: \(error)")
-                        #endif
+                        await MainActor.run { self.activityErrorMessage = "Radarr activity failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await RadarrService.shared.fetchHistory()
+                        await MainActor.run { self.radarrHistory = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Radarr history failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await RadarrService.shared.fetchBlocklist()
+                        await MainActor.run { self.radarrBlocklist = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Radarr blocklist failed: \(error.localizedDescription)" }
                     }
                 }
             }
@@ -690,9 +809,23 @@ struct DownloadsView: View {
                             self.sonarrQueue = queue
                         }
                     } catch {
-                        #if DEBUG
-                        print("Error loading Sonarr queue: \(error)")
-                        #endif
+                        await MainActor.run { self.activityErrorMessage = "Sonarr activity failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await SonarrService.shared.fetchHistory()
+                        await MainActor.run { self.sonarrHistory = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Sonarr history failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await SonarrService.shared.fetchBlocklist()
+                        await MainActor.run { self.sonarrBlocklist = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Sonarr blocklist failed: \(error.localizedDescription)" }
                     }
                 }
             }
@@ -700,42 +833,80 @@ struct DownloadsView: View {
     }
 
     private func refreshWantedData() async {
-        guard isSonarrConfigured else { return }
-        do {
-            let episodes = try await SonarrService.shared.fetchWanted(forceRefresh: true)
-            await MainActor.run {
-                self.wantedEpisodes = episodes
+        await withTaskGroup(of: Void.self) { group in
+            if isRadarrConfigured {
+                group.addTask {
+                    do {
+                        let records = try await RadarrService.shared.fetchWanted()
+                        await MainActor.run { self.wantedMovies = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Radarr wanted failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await RadarrService.shared.fetchCutoffUnmet()
+                        await MainActor.run { self.cutoffMovies = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Radarr cutoff failed: \(error.localizedDescription)" }
+                    }
+                }
             }
-        } catch {
-            #if DEBUG
-            print("Error loading wanted episodes: \(error)")
-            #endif
+            if isSonarrConfigured {
+                group.addTask {
+                    do {
+                        let records = try await SonarrService.shared.fetchWanted(forceRefresh: true)
+                        await MainActor.run { self.wantedEpisodes = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Sonarr wanted failed: \(error.localizedDescription)" }
+                    }
+                }
+                group.addTask {
+                    do {
+                        let records = try await SonarrService.shared.fetchCutoffUnmet()
+                        await MainActor.run { self.cutoffEpisodes = records }
+                    } catch {
+                        await MainActor.run { self.activityErrorMessage = "Sonarr cutoff failed: \(error.localizedDescription)" }
+                    }
+                }
+            }
         }
     }
 
-    private func removeFromRadarrQueue(_ item: QueueItem) async {
+    private func removeFromRadarrQueue(_ item: QueueItem, blocklist: Bool) async {
         do {
-            try await RadarrService.shared.removeFromQueue(id: item.id)
+            try await RadarrService.shared.removeFromQueue(id: item.id, blocklist: blocklist)
             await MainActor.run {
                 radarrQueue.removeAll { $0.id == item.id }
             }
         } catch {
-            #if DEBUG
-            print("Error removing from Radarr queue: \(error)")
-            #endif
+            await MainActor.run { activityErrorMessage = "Could not remove Radarr item: \(error.localizedDescription)" }
         }
     }
 
-    private func removeFromSonarrQueue(_ item: QueueItem) async {
+    private func removeFromSonarrQueue(_ item: QueueItem, blocklist: Bool) async {
         do {
-            try await SonarrService.shared.removeFromQueue(id: item.id)
+            try await SonarrService.shared.removeFromQueue(id: item.id, blocklist: blocklist)
             await MainActor.run {
                 sonarrQueue.removeAll { $0.id == item.id }
             }
         } catch {
-            #if DEBUG
-            print("Error removing from Sonarr queue: \(error)")
-            #endif
+            await MainActor.run { activityErrorMessage = "Could not remove Sonarr item: \(error.localizedDescription)" }
+        }
+    }
+
+    private func deleteBlocklistRecord(_ record: ArrActivityRecord, type: MediaType) async {
+        do {
+            switch type {
+            case .movie:
+                try await RadarrService.shared.deleteBlocklistItem(id: record.id)
+                await MainActor.run { radarrBlocklist.removeAll { $0.id == record.id } }
+            case .tvShow:
+                try await SonarrService.shared.deleteBlocklistItem(id: record.id)
+                await MainActor.run { sonarrBlocklist.removeAll { $0.id == record.id } }
+            }
+        } catch {
+            await MainActor.run { activityErrorMessage = "Could not clear blocklist item: \(error.localizedDescription)" }
         }
     }
 
@@ -743,9 +914,15 @@ struct DownloadsView: View {
         do {
             try await SonarrService.shared.searchForEpisode(episodeId: episode.id)
         } catch {
-            #if DEBUG
-            print("Error searching for episode: \(error)")
-            #endif
+            await MainActor.run { activityErrorMessage = "Could not search for episode: \(error.localizedDescription)" }
+        }
+    }
+
+    private func searchForMovie(_ movie: Movie) async {
+        do {
+            try await RadarrService.shared.searchForMovie(movieId: movie.id)
+        } catch {
+            await MainActor.run { activityErrorMessage = "Could not search for movie: \(error.localizedDescription)" }
         }
     }
 
@@ -904,9 +1081,10 @@ enum MediaType {
 struct ActivityQueueCard: View {
     let item: QueueItem
     let type: MediaType
-    let onRemove: () async -> Void
+    let onRemove: (Bool) async -> Void
 
     @State private var isRemoving = false
+    @State private var showingRemoveOptions = false
 
     private var statusColor: Color {
         if item.hasIssue {
@@ -931,13 +1109,7 @@ struct ActivityQueueCard: View {
                 Spacer()
 
                 // Remove button
-                Button(action: {
-                    isRemoving = true
-                    Task {
-                        await onRemove()
-                        isRemoving = false
-                    }
-                }) {
+                Button(action: { showingRemoveOptions = true }) {
                     if isRemoving {
                         ProgressView()
                             .scaleEffect(0.7)
@@ -1009,6 +1181,91 @@ struct ActivityQueueCard: View {
         .padding(AppSpacing.md)
         .background(ColorPalette.cardBackgroundDark)
         .cornerRadius(AppRadius.md)
+        .confirmationDialog("Remove download?", isPresented: $showingRemoveOptions, titleVisibility: .visible) {
+            Button("Remove and Block Release", role: .destructive) {
+                remove(blocklist: true)
+            }
+            Button("Remove from Queue Only", role: .destructive) {
+                remove(blocklist: false)
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Blocking prevents Radarr or Sonarr from grabbing this same release again.")
+        }
+    }
+
+    private func remove(blocklist: Bool) {
+        isRemoving = true
+        Task {
+            await onRemove(blocklist)
+            await MainActor.run { isRemoving = false }
+        }
+    }
+}
+
+private struct ArrActivityCard: View {
+    let record: ArrActivityRecord
+    let type: MediaType
+    let canDelete: Bool
+    let onDelete: () async -> Void
+
+    @State private var isDeleting = false
+
+    private var dateText: String? {
+        record.parsedDate?.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: type == .movie ? "film.fill" : "tv.fill")
+                .foregroundColor(type == .movie ? ColorPalette.primary : ColorPalette.secondary)
+                .frame(width: 24)
+
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                Text(record.displayTitle)
+                    .font(AppTypography.subheadline(.medium))
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+                    .lineLimit(2)
+
+                HStack(spacing: AppSpacing.xs) {
+                    Text(record.displayEvent)
+                    if let dateText { Text("• \(dateText)") }
+                }
+                .font(AppTypography.caption2())
+                .foregroundColor(ColorPalette.textMutedDark)
+
+                if let message = record.message, !message.isEmpty {
+                    Text(message)
+                        .font(AppTypography.caption2())
+                        .foregroundColor(ColorPalette.warning)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            if canDelete {
+                Button {
+                    isDeleting = true
+                    Task {
+                        await onDelete()
+                        await MainActor.run { isDeleting = false }
+                    }
+                } label: {
+                    if isDeleting {
+                        ProgressView().scaleEffect(0.7)
+                    } else {
+                        Image(systemName: "trash")
+                            .foregroundColor(ColorPalette.error)
+                    }
+                }
+                .disabled(isDeleting)
+                .accessibilityLabel("Remove from blocklist")
+            }
+        }
+        .padding(AppSpacing.md)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.md)
     }
 }
 
@@ -1032,6 +1289,48 @@ private struct DownloadsSectionHeader: View {
 }
 
 // MARK: - Wanted Episode Card
+
+struct WantedMovieCard: View {
+    let movie: Movie
+    let onSearch: () async -> Void
+
+    @State private var isSearching = false
+
+    var body: some View {
+        HStack(spacing: AppSpacing.md) {
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                Text(movie.title)
+                    .font(AppTypography.subheadline(.medium))
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+                    .lineLimit(1)
+                Text("\(movie.year) • \(movie.minimumAvailabilityDisplayName ?? "Monitored")")
+                    .font(AppTypography.caption1())
+                    .foregroundColor(ColorPalette.textMutedDark)
+            }
+            Spacer()
+            Button {
+                isSearching = true
+                Task {
+                    await onSearch()
+                    await MainActor.run { isSearching = false }
+                }
+            } label: {
+                if isSearching {
+                    ProgressView().scaleEffect(0.8)
+                } else {
+                    Label("Search", systemImage: "magnifyingglass")
+                        .labelStyle(.iconOnly)
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(ColorPalette.primary)
+            .disabled(isSearching)
+        }
+        .padding(AppSpacing.md)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.md)
+    }
+}
 
 struct WantedEpisodeCard: View {
     let episode: Episode

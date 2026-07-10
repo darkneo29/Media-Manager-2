@@ -20,7 +20,7 @@ struct QuickAddMovieSheet: View {
     @State private var selectedQualityProfileId: Int = 1
     @State private var selectedRootFolderPath: String = ""
     @State private var selectedMinimumAvailability: RadarrMinimumAvailability = .released
-    @State private var monitored: Bool = true
+    @State private var selectedMonitorOption: RadarrMonitorOption = .movieOnly
     @State private var selectedTagIds: Set<Int> = []
     @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
@@ -285,22 +285,21 @@ struct QuickAddMovieSheet: View {
                 )
             }
 
-            // Monitored toggle
+            // Monitoring option
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Monitored")
-                        .font(AppTypography.subheadline())
-                        .foregroundColor(ColorPalette.textPrimaryDark)
-                    Text("Let Radarr manage this movie after adding")
-                        .font(AppTypography.caption2())
-                        .foregroundColor(ColorPalette.textMutedDark)
-                }
+                Text("Monitor")
+                    .font(AppTypography.subheadline())
+                    .foregroundColor(ColorPalette.textPrimaryDark)
 
                 Spacer()
 
-                Toggle("", isOn: $monitored)
-                    .tint(ColorPalette.primary)
-                    .labelsHidden()
+                Picker("Monitor", selection: $selectedMonitorOption) {
+                    ForEach(RadarrMonitorOption.allCases) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(ColorPalette.secondary)
             }
             .padding(.horizontal, AppSpacing.md)
             .padding(.vertical, AppSpacing.sm)
@@ -386,11 +385,16 @@ struct QuickAddMovieSheet: View {
                 )
             }
 
-            QuickAddToggleRow(
-                title: "Monitored",
-                subtitle: "Let Radarr manage this movie after adding",
-                isOn: $monitored
-            )
+            QuickAddPickerRow(
+                title: "Monitor",
+                isLoading: isLoadingOptions,
+                selectedLabel: selectedMonitorOption.displayName
+            ) {
+                let options = RadarrMonitorOption.allCases
+                if let index = options.firstIndex(of: selectedMonitorOption) {
+                    selectedMonitorOption = options[(index + 1) % options.count]
+                }
+            }
 
             // Search for movie toggle
             QuickAddToggleRow(
@@ -406,14 +410,14 @@ struct QuickAddMovieSheet: View {
         do {
             async let profilesTask = RadarrService.shared.fetchQualityProfiles()
             async let foldersTask = RadarrService.shared.fetchRootFolders()
-            async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags()) ?? []
+            async let tagsTask: [MediaTag]? = try? await RadarrService.shared.fetchTags()
 
             let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
             await MainActor.run {
                 qualityProfiles = profiles
                 rootFolders = folders
-                tags = fetchedTags
+                tags = fetchedTags ?? []
 
                 let preferences = AddMediaPreferences.shared.radarrSettings(
                     profiles: profiles,
@@ -423,7 +427,7 @@ struct QuickAddMovieSheet: View {
                 selectedQualityProfileId = preferences.qualityProfileId
                 selectedRootFolderPath = preferences.rootFolderPath
                 selectedMinimumAvailability = preferences.minimumAvailability
-                monitored = preferences.monitored
+                selectedMonitorOption = preferences.monitorOption
                 searchForMovie = preferences.searchForMovie
                 selectedTagIds = Set(preferences.tagIds)
 
@@ -459,12 +463,15 @@ struct QuickAddMovieSheet: View {
         Task {
             do {
                 persistCurrentPreferences()
-                // Use cached search - the CacheManager will deduplicate if same search is in progress
-                let results = try await RadarrService.shared.searchMovies(term: movie.title)
-
-                // Find the matching movie by TMDB ID
-                guard let movieLookup = results.first(where: { $0.tmdbId == movie.id }) ?? results.first else {
-                    throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Movie not found in Radarr"])
+                // Use an identifier lookup so remakes and localized titles cannot
+                // silently resolve to the first text-search result.
+                let results = try await RadarrService.shared.searchMovies(term: "tmdb:\(movie.id)")
+                guard let movieLookup = results.first(where: { $0.tmdbId == movie.id }) else {
+                    throw NSError(
+                        domain: "MediaManager.QuickAdd",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "The exact TMDB movie could not be found in Radarr."]
+                    )
                 }
 
                 // Add to Radarr with selected options
@@ -473,7 +480,8 @@ struct QuickAddMovieSheet: View {
                     qualityProfileId: selectedQualityProfileId,
                     rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
                     minimumAvailability: selectedMinimumAvailability,
-                    monitored: monitored,
+                    monitored: selectedMonitorOption.isMonitored,
+                    monitorOption: selectedMonitorOption,
                     searchForMovie: searchForMovie,
                     tagIds: selectedTagIds.sorted()
                 )
@@ -496,7 +504,7 @@ struct QuickAddMovieSheet: View {
                     if error.localizedDescription.contains("already") || error.localizedDescription.contains("exists") {
                         errorMessage = "Movie already in library"
                     } else {
-                        errorMessage = "Failed to add movie"
+                        errorMessage = error.localizedDescription
                     }
                 }
             }
@@ -509,7 +517,8 @@ struct QuickAddMovieSheet: View {
             qualityProfileId: selectedQualityProfileId,
             rootFolderPath: selectedRootFolderPath.isEmpty ? "/movies/" : selectedRootFolderPath,
             minimumAvailability: selectedMinimumAvailability,
-            monitored: monitored,
+            monitored: selectedMonitorOption.isMonitored,
+            monitorOption: selectedMonitorOption,
             searchForMovie: searchForMovie,
             tagIds: selectedTagIds.sorted()
         )
@@ -1053,13 +1062,13 @@ struct QuickAddTVShowSheet: View {
         do {
             // Load quality profiles and root folders in parallel
             async let foldersTask = SonarrService.shared.fetchRootFolders()
-            async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags()) ?? []
+            async let tagsTask: [MediaTag]? = try? await SonarrService.shared.fetchTags()
             await libraryState.loadQualityProfiles()
             let (folders, fetchedTags) = try await (foldersTask, tagsTask)
 
             await MainActor.run {
                 rootFolders = folders
-                tags = fetchedTags
+                tags = fetchedTags ?? []
 
                 let preferences = AddMediaPreferences.shared.sonarrSettings(
                     profiles: libraryState.qualityProfiles,
@@ -1109,21 +1118,14 @@ struct QuickAddTVShowSheet: View {
         Task {
             do {
                 persistCurrentPreferences()
-                // Use cached search - the CacheManager will deduplicate if same search is in progress
-                let results = try await SonarrService.shared.searchShows(term: show.name)
-
-                // Find the best matching show (by year if available)
-                let showLookup: TVShowLookup
-                if let year = show.year {
-                    guard let match = results.first(where: { $0.year == year }) ?? results.first else {
-                        throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Show not found in Sonarr"])
-                    }
-                    showLookup = match
-                } else {
-                    guard let first = results.first else {
-                        throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Show not found in Sonarr"])
-                    }
-                    showLookup = first
+                let tvdbId = try await resolvedTVDBId()
+                let results = try await SonarrService.shared.searchShows(term: "tvdb:\(tvdbId)")
+                guard let showLookup = results.first(where: { $0.tvdbId == tvdbId }) else {
+                    throw NSError(
+                        domain: "MediaManager.QuickAdd",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "The exact TVDB series could not be found in Sonarr."]
+                    )
                 }
 
                 // Add to Sonarr with selected options
@@ -1159,11 +1161,26 @@ struct QuickAddTVShowSheet: View {
                     if error.localizedDescription.contains("already") || error.localizedDescription.contains("exists") {
                         errorMessage = "Show already in library"
                     } else {
-                        errorMessage = "Failed to add show"
+                        errorMessage = error.localizedDescription
                     }
                 }
             }
         }
+    }
+
+    private func resolvedTVDBId() async throws -> Int {
+        if let tvdbId = show.tvdbId {
+            return tvdbId
+        }
+        let externalIds = try await TMDBService.shared.fetchTVShowExternalIds(tmdbId: show.id)
+        guard let tvdbId = externalIds.tvdbId else {
+            throw NSError(
+                domain: "MediaManager.QuickAdd",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "TMDB did not provide a TVDB identifier for this series."]
+            )
+        }
+        return tvdbId
     }
 
     private func persistCurrentPreferences() {

@@ -10,7 +10,10 @@ struct EditTVShowView: View {
     @State private var monitorNewItems: SonarrNewItemMonitor
     @State private var seasonFolder: Bool
     @State private var selectedTagIds: Set<Int>
+    @State private var selectedRootFolderPath: String
+    @State private var moveFiles = true
     @State private var qualityProfiles: [QualityProfile] = []
+    @State private var rootFolders: [SonarrRootFolder] = []
     @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
     @State private var isSaving = false
@@ -24,6 +27,7 @@ struct EditTVShowView: View {
         _monitorNewItems = State(initialValue: SonarrNewItemMonitor(rawValue: show.monitorNewItems ?? "") ?? .all)
         _seasonFolder = State(initialValue: show.seasonFolder ?? true)
         _selectedTagIds = State(initialValue: Set(show.tags ?? []))
+        _selectedRootFolderPath = State(initialValue: show.rootFolderPath ?? "")
     }
 
     private var selectedTagSummary: String {
@@ -170,6 +174,39 @@ struct EditTVShowView: View {
                                         .stroke(ColorPalette.divider, lineWidth: 1)
                                 )
                             }
+
+                            if !rootFolders.isEmpty {
+                                HStack {
+                                    Label("Root Folder", systemImage: "folder")
+                                        .font(AppTypography.body())
+                                        .foregroundColor(ColorPalette.textPrimaryDark)
+                                    Spacer()
+                                    Picker("Root Folder", selection: $selectedRootFolderPath) {
+                                        ForEach(rootFolders) { folder in
+                                            Text(folder.folderName).tag(folder.path)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .tint(ColorPalette.secondary)
+                                }
+                                .padding(.vertical, AppSpacing.sm)
+                                .padding(.horizontal, AppSpacing.md)
+                                .background(ColorPalette.cardBackgroundDark)
+                                .cornerRadius(AppRadius.md)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.md)
+                                        .stroke(ColorPalette.divider, lineWidth: 1)
+                                )
+
+                                if selectedRootFolderPath != (show.rootFolderPath ?? "") {
+                                    Toggle("Move existing files", isOn: $moveFiles)
+                                        .tint(ColorPalette.primary)
+                                        .padding(.vertical, AppSpacing.sm)
+                                        .padding(.horizontal, AppSpacing.md)
+                                        .background(ColorPalette.cardBackgroundDark)
+                                        .cornerRadius(AppRadius.md)
+                                }
+                            }
                         }
                         .padding(.horizontal, AppSpacing.md)
 
@@ -290,16 +327,26 @@ struct EditTVShowView: View {
         Task {
             do {
                 async let profilesTask = SonarrService.shared.fetchQualityProfiles()
-                async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags()) ?? []
-                let (profiles, fetchedTags) = try await (profilesTask, tagsTask)
+                async let foldersTask = SonarrService.shared.fetchRootFolders()
+                async let tagsTask: [MediaTag]? = try? await SonarrService.shared.fetchTags()
+                let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
                 await MainActor.run {
                     qualityProfiles = profiles
-                    tags = fetchedTags
-                    selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    rootFolders = folders
+                    if selectedRootFolderPath.isEmpty {
+                        selectedRootFolderPath = folders.first?.path ?? ""
+                    }
+                    if let fetchedTags {
+                        tags = fetchedTags
+                        selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    } else {
+                        errorMessage = "Tags could not be loaded. Existing tags will be preserved."
+                    }
                     isLoadingOptions = false
                 }
             } catch {
                 await MainActor.run {
+                    errorMessage = "Could not load editing options: \(error.localizedDescription)"
                     isLoadingOptions = false
                 }
             }
@@ -317,10 +364,12 @@ struct EditTVShowView: View {
         updatedShow.monitorNewItems = monitorNewItems.rawValue
         updatedShow.seasonFolder = seasonFolder
         updatedShow.tags = selectedTagIds.sorted()
+        updatedShow.rootFolderPath = selectedRootFolderPath
 
         Task {
             do {
-                try await SonarrService.shared.updateShow(show: updatedShow)
+                let rootChanged = selectedRootFolderPath != (show.rootFolderPath ?? "")
+                try await SonarrService.shared.updateShow(show: updatedShow, moveFiles: rootChanged && moveFiles)
                 await MainActor.run {
                     dismiss()
                 }

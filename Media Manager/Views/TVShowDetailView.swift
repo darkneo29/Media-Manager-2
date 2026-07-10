@@ -8,6 +8,8 @@ struct TVShowDetailView: View {
     @State private var showingDeleteAlert = false
     @State private var showingEditSheet = false
     @State private var isDeleting = false
+    @State private var isRunningCommand = false
+    @State private var actionErrorMessage: String?
 
     // File management state
     @State private var episodeFiles: [EpisodeFile] = []
@@ -462,6 +464,9 @@ struct TVShowDetailView: View {
                                             onSetSeasonMonitoring: { episodes, monitored in
                                                 setSeasonMonitoring(episodes: episodes, monitored: monitored)
                                             },
+                                            onSearchSeason: { seasonNumber in
+                                                searchForSeason(seasonNumber)
+                                            },
                                             searchingEpisodeId: searchingEpisodeId,
                                             updatingEpisodeId: updatingEpisodeId
                                         )
@@ -600,6 +605,34 @@ struct TVShowDetailView: View {
         }
         .navigationTitle("Details")
         .navBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        showingEditSheet = true
+                    } label: {
+                        Label("Edit Show", systemImage: "pencil")
+                    }
+                    Button {
+                        runShowCommand(.refresh)
+                    } label: {
+                        Label("Refresh & Scan", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Button {
+                        runShowCommand(.rename)
+                    } label: {
+                        Label("Rename Files", systemImage: "text.cursor")
+                    }
+                } label: {
+                    if isRunningCommand {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+                .disabled(isRunningCommand)
+            }
+        }
         .confirmationDialog("Delete \(show.title)?", isPresented: $showingDeleteAlert, titleVisibility: .visible) {
             Button("Remove from Sonarr Only", role: .destructive) {
                 deleteShow(deleteFiles: false, addImportExclusion: false)
@@ -631,6 +664,14 @@ struct TVShowDetailView: View {
         } message: {
             Text("Are you sure you want to delete this episode file? The episode will remain in your library but the file will be removed from disk.")
         }
+        .alert("Action Failed", isPresented: Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionErrorMessage = nil }
+        } message: {
+            Text(actionErrorMessage ?? "The request could not be completed.")
+        }
         .sheet(item: $selectedReleaseEpisode) { episode in
             ReleaseSearchSheet(
                 title: episode.displayTitle,
@@ -652,6 +693,28 @@ struct TVShowDetailView: View {
     }
 
     // MARK: - Trailer Loading
+
+    private enum ShowCommand { case refresh, rename }
+
+    private func runShowCommand(_ command: ShowCommand) {
+        isRunningCommand = true
+        Task {
+            do {
+                switch command {
+                case .refresh:
+                    try await SonarrService.shared.refreshShow(seriesId: show.id)
+                case .rename:
+                    try await SonarrService.shared.renameShow(seriesId: show.id)
+                }
+                await MainActor.run { isRunningCommand = false }
+            } catch {
+                await MainActor.run {
+                    actionErrorMessage = error.localizedDescription
+                    isRunningCommand = false
+                }
+            }
+        }
+    }
 
     private func loadTrailer() {
         guard let tvdbId = show.tvdbId else { return }
@@ -688,6 +751,7 @@ struct TVShowDetailView: View {
                 }
             } catch {
                 await MainActor.run {
+                    actionErrorMessage = "Could not load episodes: \(error.localizedDescription)"
                     isLoadingEpisodes = false
                 }
             }
@@ -705,6 +769,7 @@ struct TVShowDetailView: View {
                 }
             } catch {
                 await MainActor.run {
+                    actionErrorMessage = "Could not start the episode search: \(error.localizedDescription)"
                     searchingEpisodeId = nil
                 }
             }
@@ -745,6 +810,7 @@ struct TVShowDetailView: View {
                 }
             } catch {
                 await MainActor.run {
+                    actionErrorMessage = "Could not update episode monitoring: \(error.localizedDescription)"
                     updatingEpisodeId = nil
                 }
             }
@@ -785,6 +851,27 @@ struct TVShowDetailView: View {
                 #if DEBUG
                 print("Error updating season monitoring: \(error)")
                 #endif
+                await MainActor.run {
+                    actionErrorMessage = "Could not update season monitoring: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func searchForSeason(_ seasonNumber: Int) {
+        isSearching = true
+        Task {
+            do {
+                try await SonarrService.shared.searchForSeason(seriesId: show.id, seasonNumber: seasonNumber)
+                await MainActor.run {
+                    isSearching = false
+                    showSearchToast = true
+                }
+            } catch {
+                await MainActor.run {
+                    actionErrorMessage = "Could not search season: \(error.localizedDescription)"
+                    isSearching = false
+                }
             }
         }
     }
@@ -805,6 +892,7 @@ struct TVShowDetailView: View {
                 print("Error loading episode files: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not load episode files: \(error.localizedDescription)"
                     isLoadingFiles = false
                 }
             }
@@ -826,6 +914,7 @@ struct TVShowDetailView: View {
                 print("Error deleting episode file: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not delete the episode file: \(error.localizedDescription)"
                     isDeletingFile = false
                     fileToDelete = nil
                 }
@@ -849,6 +938,7 @@ struct TVShowDetailView: View {
                 print("Error searching for show: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not start the series search: \(error.localizedDescription)"
                     isSearching = false
                 }
             }
@@ -865,6 +955,8 @@ struct TVShowDetailView: View {
                     addImportExclusion: addImportExclusion
                 )
                 await MainActor.run {
+                    LibraryStateManager.shared.removeShowLocally(id: show.id)
+                    syncWidgetReleaseRadar()
                     dismiss()
                 }
             } catch {
@@ -872,6 +964,7 @@ struct TVShowDetailView: View {
                 print("Error deleting show: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not delete the show: \(error.localizedDescription)"
                     isDeleting = false
                 }
             }
@@ -885,12 +978,17 @@ struct TVShowDetailView: View {
                 if let updatedShow = shows.first(where: { $0.id == show.id }) {
                     await MainActor.run {
                         show = updatedShow
+                        LibraryStateManager.shared.updateShowLocally(updatedShow)
+                        syncWidgetReleaseRadar()
                     }
                 }
             } catch {
                 #if DEBUG
                 print("Error refreshing show: \(error)")
                 #endif
+                await MainActor.run {
+                    actionErrorMessage = "Could not refresh the show: \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -972,6 +1070,7 @@ struct EpisodeSeasonSection: View {
     let onManualSearchEpisode: (Episode) -> Void
     let onToggleEpisodeMonitoring: (Episode) -> Void
     let onSetSeasonMonitoring: ([Episode], Bool) -> Void
+    let onSearchSeason: (Int) -> Void
     let searchingEpisodeId: Int?
     let updatingEpisodeId: Int?
 
@@ -1010,6 +1109,9 @@ struct EpisodeSeasonSection: View {
                     // Episode stats
                     HStack(spacing: AppSpacing.xs) {
                         Menu {
+                            Button("Search Season", systemImage: "magnifyingglass") {
+                                onSearchSeason(seasonNumber)
+                            }
                             Button("Monitor Season") {
                                 onSetSeasonMonitoring(episodes, true)
                             }

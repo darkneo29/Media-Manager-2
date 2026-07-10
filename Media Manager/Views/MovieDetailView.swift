@@ -8,6 +8,8 @@ struct MovieDetailView: View {
     @State private var showingDeleteAlert = false
     @State private var showingEditSheet = false
     @State private var isDeleting = false
+    @State private var isRunningCommand = false
+    @State private var actionErrorMessage: String?
 
     // File management state
     @State private var movieFiles: [MovieFile] = []
@@ -442,6 +444,34 @@ struct MovieDetailView: View {
         }
         .navigationTitle("Details")
         .navBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button {
+                        showingEditSheet = true
+                    } label: {
+                        Label("Edit Movie", systemImage: "pencil")
+                    }
+                    Button {
+                        runMovieCommand(.refresh)
+                    } label: {
+                        Label("Refresh & Scan", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    Button {
+                        runMovieCommand(.rename)
+                    } label: {
+                        Label("Rename Files", systemImage: "text.cursor")
+                    }
+                } label: {
+                    if isRunningCommand {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+                .disabled(isRunningCommand)
+            }
+        }
         .confirmationDialog("Delete \(movie.title)?", isPresented: $showingDeleteAlert, titleVisibility: .visible) {
             Button("Remove from Radarr Only", role: .destructive) {
                 deleteMovie(deleteFiles: false, addImportExclusion: false)
@@ -473,6 +503,14 @@ struct MovieDetailView: View {
         } message: {
             Text("Are you sure you want to delete this file? The movie will remain in your library but the file will be removed from disk.")
         }
+        .alert("Action Failed", isPresented: Binding(
+            get: { actionErrorMessage != nil },
+            set: { if !$0 { actionErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { actionErrorMessage = nil }
+        } message: {
+            Text(actionErrorMessage ?? "The request could not be completed.")
+        }
         .sheet(isPresented: $showingReleaseSearch) {
             ReleaseSearchSheet(
                 title: movie.title,
@@ -493,6 +531,28 @@ struct MovieDetailView: View {
     }
 
     // MARK: - Trailer Loading
+
+    private enum MovieCommand { case refresh, rename }
+
+    private func runMovieCommand(_ command: MovieCommand) {
+        isRunningCommand = true
+        Task {
+            do {
+                switch command {
+                case .refresh:
+                    try await RadarrService.shared.refreshMovie(movieId: movie.id)
+                case .rename:
+                    try await RadarrService.shared.renameMovie(movieId: movie.id)
+                }
+                await MainActor.run { isRunningCommand = false }
+            } catch {
+                await MainActor.run {
+                    actionErrorMessage = error.localizedDescription
+                    isRunningCommand = false
+                }
+            }
+        }
+    }
 
     private func loadTrailer() {
         guard let tmdbId = movie.tmdbId else { return }
@@ -532,6 +592,7 @@ struct MovieDetailView: View {
                 print("Error loading movie files: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not load movie files: \(error.localizedDescription)"
                     isLoadingFiles = false
                 }
             }
@@ -553,6 +614,7 @@ struct MovieDetailView: View {
                 print("Error deleting movie file: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not delete the movie file: \(error.localizedDescription)"
                     isDeletingFile = false
                     fileToDelete = nil
                 }
@@ -576,6 +638,7 @@ struct MovieDetailView: View {
                 print("Error searching for movie: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not start the movie search: \(error.localizedDescription)"
                     isSearching = false
                 }
             }
@@ -592,6 +655,8 @@ struct MovieDetailView: View {
                     addImportExclusion: addImportExclusion
                 )
                 await MainActor.run {
+                    LibraryStateManager.shared.removeMovieLocally(id: movie.id)
+                    syncWidgetReleaseRadar()
                     dismiss()
                 }
             } catch {
@@ -599,6 +664,7 @@ struct MovieDetailView: View {
                 print("Error deleting movie: \(error)")
                 #endif
                 await MainActor.run {
+                    actionErrorMessage = "Could not delete the movie: \(error.localizedDescription)"
                     isDeleting = false
                 }
             }
@@ -612,12 +678,17 @@ struct MovieDetailView: View {
                 if let updatedMovie = movies.first(where: { $0.id == movie.id }) {
                     await MainActor.run {
                         movie = updatedMovie
+                        LibraryStateManager.shared.updateMovieLocally(updatedMovie)
+                        syncWidgetReleaseRadar()
                     }
                 }
             } catch {
                 #if DEBUG
                 print("Error refreshing movie: \(error)")
                 #endif
+                await MainActor.run {
+                    actionErrorMessage = "Could not refresh the movie: \(error.localizedDescription)"
+                }
             }
         }
     }

@@ -203,6 +203,7 @@ struct RadarrAddSettings {
     var rootFolderPath: String
     var minimumAvailability: RadarrMinimumAvailability
     var monitored: Bool
+    var monitorOption: RadarrMonitorOption = .movieOnly
     var searchForMovie: Bool
     var tagIds: [Int]
 }
@@ -231,6 +232,7 @@ final class AddMediaPreferences {
         static let radarrRootFolderPath = "addPreferences.radarr.rootFolderPath"
         static let radarrMinimumAvailability = "addPreferences.radarr.minimumAvailability"
         static let radarrMonitored = "addPreferences.radarr.monitored"
+        static let radarrMonitorOption = "addPreferences.radarr.monitorOption"
         static let radarrSearchForMovie = "addPreferences.radarr.searchForMovie"
         static let radarrTagIds = "addPreferences.radarr.tagIds"
 
@@ -246,16 +248,21 @@ final class AddMediaPreferences {
         static let sonarrTagIds = "addPreferences.sonarr.tagIds"
     }
 
-    private init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    func radarrSettings(profiles: [RadarrQualityProfile], rootFolders: [RootFolder], tags: [MediaTag]) -> RadarrAddSettings {
-        RadarrAddSettings(
+    func radarrSettings(profiles: [RadarrQualityProfile], rootFolders: [RootFolder], tags: [MediaTag]?) -> RadarrAddSettings {
+        let monitored = bool(for: Keys.radarrMonitored, defaultValue: true)
+        let monitorOption = RadarrMonitorOption(
+            rawValue: defaults.string(forKey: Keys.radarrMonitorOption) ?? ""
+        ) ?? (monitored ? .movieOnly : .none)
+        return RadarrAddSettings(
             qualityProfileId: preferredRadarrQualityProfileId(profiles),
             rootFolderPath: preferredRadarrRootFolderPath(rootFolders),
             minimumAvailability: RadarrMinimumAvailability(rawValue: defaults.string(forKey: Keys.radarrMinimumAvailability) ?? "") ?? .released,
-            monitored: bool(for: Keys.radarrMonitored, defaultValue: true),
+            monitored: monitorOption.isMonitored,
+            monitorOption: monitorOption,
             searchForMovie: bool(for: Keys.radarrSearchForMovie, defaultValue: true),
             tagIds: validatedTagIds(defaults.array(forKey: Keys.radarrTagIds) as? [Int] ?? [], availableTags: tags)
         )
@@ -266,11 +273,12 @@ final class AddMediaPreferences {
         defaults.set(settings.rootFolderPath, forKey: Keys.radarrRootFolderPath)
         defaults.set(settings.minimumAvailability.rawValue, forKey: Keys.radarrMinimumAvailability)
         defaults.set(settings.monitored, forKey: Keys.radarrMonitored)
+        defaults.set(settings.monitorOption.rawValue, forKey: Keys.radarrMonitorOption)
         defaults.set(settings.searchForMovie, forKey: Keys.radarrSearchForMovie)
         defaults.set(settings.tagIds.sorted(), forKey: Keys.radarrTagIds)
     }
 
-    func sonarrSettings(profiles: [QualityProfile], rootFolders: [SonarrRootFolder], tags: [MediaTag]) -> SonarrAddSettings {
+    func sonarrSettings(profiles: [QualityProfile], rootFolders: [SonarrRootFolder], tags: [MediaTag]?) -> SonarrAddSettings {
         SonarrAddSettings(
             qualityProfileId: preferredSonarrQualityProfileId(profiles),
             rootFolderPath: preferredSonarrRootFolderPath(rootFolders),
@@ -342,7 +350,10 @@ final class AddMediaPreferences {
         return defaults.bool(forKey: key)
     }
 
-    private func validatedTagIds(_ tagIds: [Int], availableTags: [MediaTag]) -> [Int] {
+    private func validatedTagIds(_ tagIds: [Int], availableTags: [MediaTag]?) -> [Int] {
+        // A nil tag list means the endpoint was unavailable. Preserve the user's
+        // saved defaults instead of interpreting a transient failure as "no tags".
+        guard let availableTags else { return tagIds }
         guard !availableTags.isEmpty else { return [] }
         let availableIds = Set(availableTags.map(\.id))
         return tagIds.filter { availableIds.contains($0) }

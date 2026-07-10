@@ -246,6 +246,7 @@ struct TVShow: Codable, Identifiable, Hashable {
 
 struct TVShowLookup: Codable, Identifiable {
     var id: Int { tvdbId }
+    var sonarrId: Int?
     let tvdbId: Int
     let title: String
     let year: Int
@@ -255,7 +256,28 @@ struct TVShowLookup: Codable, Identifiable {
     let images: [TVShowImage]?
 
     enum CodingKeys: String, CodingKey {
+        case sonarrId = "id"
         case tvdbId, title, year, overview, statistics, network, images
+    }
+
+    init(
+        sonarrId: Int? = nil,
+        tvdbId: Int,
+        title: String,
+        year: Int,
+        overview: String?,
+        statistics: TVShowStatistics?,
+        network: String?,
+        images: [TVShowImage]?
+    ) {
+        self.sonarrId = sonarrId
+        self.tvdbId = tvdbId
+        self.title = title
+        self.year = year
+        self.overview = overview
+        self.statistics = statistics
+        self.network = network
+        self.images = images
     }
 
     var seasonCount: Int {

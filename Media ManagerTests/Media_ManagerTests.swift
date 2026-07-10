@@ -321,6 +321,67 @@ struct Media_ManagerTests {
         #expect(DownloadStatus(from: item.status) == .quickCheck)
     }
 
+    @Test @MainActor
+    func addDefaultsPreserveTagsWhenTagEndpointIsUnavailable() {
+        let store = makeDefaults(suffix: "add-default-tags")
+        defer { clearDefaults(store) }
+        store.defaults.set([2, 7], forKey: "addPreferences.radarr.tagIds")
+
+        let preferences = AddMediaPreferences(defaults: store.defaults)
+        let settings = preferences.radarrSettings(
+            profiles: [RadarrQualityProfile(id: 1, name: "HD")],
+            rootFolders: [RootFolder(id: 1, path: "/movies", freeSpace: nil, totalSpace: nil)],
+            tags: nil
+        )
+
+        #expect(settings.tagIds == [2, 7])
+    }
+
+    @Test @MainActor
+    func addDefaultsDiscardOnlyTagsConfirmedMissingByServer() {
+        let store = makeDefaults(suffix: "add-default-tag-validation")
+        defer { clearDefaults(store) }
+        store.defaults.set([2, 7], forKey: "addPreferences.radarr.tagIds")
+
+        let preferences = AddMediaPreferences(defaults: store.defaults)
+        let settings = preferences.radarrSettings(
+            profiles: [RadarrQualityProfile(id: 1, name: "HD")],
+            rootFolders: [RootFolder(id: 1, path: "/movies", freeSpace: nil, totalSpace: nil)],
+            tags: [MediaTag(id: 7, label: "keep")]
+        )
+
+        #expect(settings.tagIds == [7])
+    }
+
+    @Test @MainActor
+    func legacyMovieMonitoringDefaultMigratesToRadarrMonitorOption() {
+        let store = makeDefaults(suffix: "radarr-monitor-migration")
+        defer { clearDefaults(store) }
+        store.defaults.set(false, forKey: "addPreferences.radarr.monitored")
+
+        let preferences = AddMediaPreferences(defaults: store.defaults)
+        let settings = preferences.radarrSettings(
+            profiles: [RadarrQualityProfile(id: 1, name: "HD")],
+            rootFolders: [RootFolder(id: 1, path: "/movies", freeSpace: nil, totalSpace: nil)],
+            tags: []
+        )
+
+        #expect(settings.monitorOption == .none)
+        #expect(!settings.monitored)
+    }
+
+    @Test
+    func sonarrLookupDecodesExistingLibraryIdentifier() throws {
+        let data = """
+        {"id":42,"tvdbId":121361,"title":"Example","year":2026,"images":[]}
+        """.data(using: .utf8)!
+
+        let lookup = try JSONDecoder().decode(TVShowLookup.self, from: data)
+
+        #expect(lookup.sonarrId == 42)
+        #expect(lookup.tvdbId == 121361)
+    }
+
     private func makeDefaults(suffix: String) -> TestDefaultsStore {
         let suiteName = "MediaManagerTests.\(suffix).\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!

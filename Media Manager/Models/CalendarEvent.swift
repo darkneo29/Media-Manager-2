@@ -267,6 +267,28 @@ struct CalendarEventBuilder {
         return events
     }
 
+    /// Build complete TV calendar events from Sonarr's calendar endpoint.
+    static func eventsFromEpisodes(_ episodes: [Episode], shows: [TVShow]) -> [CalendarEvent] {
+        let showsById = Dictionary(uniqueKeysWithValues: shows.map { ($0.id, $0) })
+        return episodes.compactMap { episode in
+            guard let date = episode.airDateParsed,
+                  let show = showsById[episode.seriesId] else { return nil }
+            let posterURL = show.images.first(where: { $0.coverType == "poster" }).flatMap { image in
+                if let remote = image.remoteUrl, let url = URL(string: remote) { return url }
+                return SonarrService.shared.imageURL(for: image.url)
+            }
+            return CalendarEvent(
+                title: "\(show.title) — \(episode.displayTitle)",
+                date: date,
+                type: .tvEpisode,
+                source: .tvShow(show),
+                posterURL: posterURL,
+                year: show.year,
+                overview: episode.overview
+            )
+        }
+    }
+
     /// Combine and sort all events
     static func allEvents(movies: [Movie], tvShows: [TVShow]) -> [CalendarEvent] {
         let movieEvents = eventsFromMovies(movies)

@@ -9,6 +9,7 @@ enum SettingsDestination: Hashable {
     case sabnzb
     case unraid
     case tmdb
+    case addDefaults
     case whatsNew
     case radarrTroubleshooting
     case sonarrTroubleshooting
@@ -162,6 +163,8 @@ struct SettingsView: View {
             UnraidSettingsView()
         case .tmdb:
             TMDBSettingsView()
+        case .addDefaults:
+            AddDefaultsView()
         case .whatsNew:
             WhatsNewView()
         case .radarrTroubleshooting:
@@ -232,6 +235,15 @@ struct SettingsView: View {
                             subtitle: "Trending Data"
                         ) {
                             navigationPath.append(SettingsDestination.tmdb)
+                        }
+
+                        TVSettingsCard(
+                            icon: "plus.rectangle.on.folder.fill",
+                            iconColor: ColorPalette.secondary,
+                            title: "Add Defaults",
+                            subtitle: "Watch & Siri"
+                        ) {
+                            navigationPath.append(SettingsDestination.addDefaults)
                         }
                     }
                 }
@@ -417,6 +429,19 @@ struct SettingsView: View {
                         navigationPath.append(SettingsDestination.tmdb)
                     } label: {
                         SettingsRow(icon: "film.stack", iconColor: ColorPalette.warning, title: "TMDB")
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                SettingsSection(title: "Adding Media", footer: "Shared defaults and presets used by Discover, Siri, and Apple Watch") {
+                    Button {
+                        navigationPath.append(SettingsDestination.addDefaults)
+                    } label: {
+                        SettingsRow(
+                            icon: "plus.rectangle.on.folder.fill",
+                            iconColor: ColorPalette.secondary,
+                            title: "Add Defaults & Presets"
+                        )
                     }
                     .buttonStyle(.plain)
                 }

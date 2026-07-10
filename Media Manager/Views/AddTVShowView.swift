@@ -21,11 +21,15 @@ struct AddTVShowView: View {
     @State private var selectedRootFolderPath: String = ""
     @State private var selectedTagIds: Set<Int> = []
     @State private var tags: [MediaTag] = []
+    @State private var tagsUnavailable = false
+    @State private var optionsExpanded = false
+    @State private var selectedShowForConfirmation: TVShowLookup?
     @State private var isLoadingOptions = true
     @State private var optionsErrorMessage: String?
 
     // Debouncing support
     @State private var searchTask: Task<Void, Never>?
+    @State private var activeSearchTask: Task<Void, Never>?
     private let debounceDelay: UInt64 = 300_000_000 // 300ms in nanoseconds
     @FocusState private var isSearchFieldFocused: Bool
 
@@ -58,11 +62,32 @@ struct AddTVShowView: View {
             loadOptions()
         }
         .onDisappear {
+            searchTask?.cancel()
+            activeSearchTask?.cancel()
             persistCurrentPreferences()
             if let show = pendingShow {
                 pendingShow = nil
                 navigationPath.append(show)
             }
+        }
+        .sheet(item: $selectedShowForConfirmation) { show in
+            AddConfirmationSheet(
+                title: show.title,
+                year: show.year,
+                posterURL: posterURL(for: show),
+                destination: "Sonarr",
+                optionsSummary: showOptionsSummary,
+                onConfirm: {
+                    selectedShowForConfirmation = nil
+                    addShow(show)
+                },
+                onReviewOptions: {
+                    selectedShowForConfirmation = nil
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        optionsExpanded = true
+                    }
+                }
+            )
         }
     }
 
@@ -117,8 +142,14 @@ struct AddTVShowView: View {
         ScrollView {
             VStack(spacing: 0) {
                 searchBar
-                iOSOptionsSection
+                addOptionsDisclosure
                 optionsErrorSection
+                if tagsUnavailable && optionsErrorMessage == nil {
+                    optionErrorBanner(
+                        message: "Tags could not be refreshed. Your saved tag defaults will be preserved.",
+                        retry: { loadOptions(forceRefresh: true) }
+                    )
+                }
                 Divider()
                     .background(ColorPalette.divider)
                 iOSSearchContent
@@ -350,11 +381,71 @@ struct AddTVShowView: View {
         .padding(.bottom, AppSpacing.sm)
     }
 
+    private var addOptionsDisclosure: some View {
+        VStack(spacing: AppSpacing.sm) {
+            HStack(spacing: AppSpacing.sm) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        optionsExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: AppSpacing.sm) {
+                        Image(systemName: "slider.horizontal.3")
+                            .foregroundColor(ColorPalette.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Add Options")
+                                .font(AppTypography.subheadline(.semibold))
+                                .foregroundColor(ColorPalette.textPrimaryDark)
+                            Text(showOptionsSummary)
+                                .font(AppTypography.caption2())
+                                .foregroundColor(ColorPalette.textMutedDark)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: optionsExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(ColorPalette.textMutedDark)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    ForEach(AddBehaviorPreset.allCases) { preset in
+                        Button(preset.title) { applyPreset(preset) }
+                    }
+                    Button("Future Episodes") {
+                        monitored = true
+                        selectedMonitorOption = .future
+                        searchForMissing = false
+                        searchForCutoffUnmet = false
+                    }
+                } label: {
+                    Image(systemName: "wand.and.stars")
+                        .foregroundColor(ColorPalette.secondary)
+                        .frame(width: 36, height: 36)
+                        .background(ColorPalette.primary.opacity(0.12))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Add preset")
+            }
+            .padding(AppSpacing.sm)
+            .background(ColorPalette.cardBackgroundDark)
+            .cornerRadius(AppRadius.md)
+            .padding(.horizontal, AppSpacing.md)
+
+            if optionsExpanded {
+                iOSOptionsSection
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.bottom, AppSpacing.sm)
+    }
+
     @ViewBuilder
     private var iOSSearchContent: some View {
         if isSearching {
             loadingStateView
-        } else if let error = errorMessage {
+        } else if let error = errorMessage, searchResults.isEmpty {
             stateView(
                 icon: "exclamationmark.triangle",
                 iconColor: ColorPalette.error,
@@ -377,9 +468,16 @@ struct AddTVShowView: View {
             )
         } else {
             LazyVStack(spacing: AppSpacing.sm) {
+                if let errorMessage {
+                    inlineSearchError(errorMessage)
+                }
                 ForEach(searchResults) { show in
-                    TVShowSearchResultCard(show: show, isAdding: addingShowId == show.tvdbId) {
-                        addShow(show)
+                    TVShowSearchResultCard(
+                        show: show,
+                        isAdding: addingShowId == show.tvdbId,
+                        isDisabled: addingShowId != nil
+                    ) {
+                        selectedShowForConfirmation = show
                     }
                 }
             }
@@ -457,8 +555,12 @@ struct AddTVShowView: View {
             ScrollView {
                 LazyVStack(spacing: AppSpacing.sm) {
                     ForEach(searchResults) { show in
-                        TVShowSearchResultCard(show: show, isAdding: addingShowId == show.tvdbId) {
-                            addShow(show)
+                        TVShowSearchResultCard(
+                            show: show,
+                            isAdding: addingShowId == show.tvdbId,
+                            isDisabled: addingShowId != nil
+                        ) {
+                            selectedShowForConfirmation = show
                         }
                     }
                 }
@@ -469,6 +571,55 @@ struct AddTVShowView: View {
         }
     }
     #endif
+
+    private var showOptionsSummary: String {
+        let profile = qualityProfiles.first(where: { $0.id == selectedQualityProfileId })?.name ?? "Profile"
+        let folder = rootFolders.first(where: { $0.path == selectedRootFolderPath })?.folderName ?? "Folder"
+        let behavior = searchForMissing ? "Search now" : selectedMonitorOption.displayName
+        return "\(profile) · \(folder) · \(behavior)"
+    }
+
+    private func applyPreset(_ preset: AddBehaviorPreset) {
+        switch preset {
+        case .downloadNow:
+            monitored = true
+            selectedMonitorOption = .all
+            searchForMissing = true
+        case .monitorOnly:
+            monitored = true
+            selectedMonitorOption = .all
+            searchForMissing = false
+            searchForCutoffUnmet = false
+        case .addOnly:
+            monitored = false
+            selectedMonitorOption = .none
+            searchForMissing = false
+            searchForCutoffUnmet = false
+        }
+    }
+
+    private func posterURL(for show: TVShowLookup) -> URL? {
+        show.images?.first(where: { $0.coverType == "poster" }).flatMap { image in
+            if let remote = image.remoteUrl, let url = URL(string: remote) {
+                return url
+            }
+            return SonarrService.shared.imageURL(for: image.url)
+        }
+    }
+
+    private func inlineSearchError(_ message: String) -> some View {
+        HStack(alignment: .top, spacing: AppSpacing.sm) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(ColorPalette.error)
+            Text(message)
+                .font(AppTypography.caption1())
+                .foregroundColor(ColorPalette.textSecondaryDark)
+            Spacer()
+        }
+        .padding(AppSpacing.sm)
+        .background(ColorPalette.error.opacity(0.12))
+        .cornerRadius(AppRadius.md)
+    }
 
     @ViewBuilder
     private var optionsErrorSection: some View {
@@ -621,14 +772,15 @@ struct AddTVShowView: View {
             do {
                 async let profilesTask = SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
                 async let foldersTask = SonarrService.shared.fetchRootFolders(forceRefresh: forceRefresh)
-                async let tagsTask: [MediaTag] = (try? await SonarrService.shared.fetchTags(forceRefresh: forceRefresh)) ?? []
+                async let tagsTask: [MediaTag]? = try? await SonarrService.shared.fetchTags(forceRefresh: forceRefresh)
 
                 let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
 
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
-                    tags = fetchedTags
+                    tags = fetchedTags ?? []
+                    tagsUnavailable = fetchedTags == nil
                     optionsErrorMessage = nil
 
                     let preferences = AddMediaPreferences.shared.sonarrSettings(
@@ -662,6 +814,7 @@ struct AddTVShowView: View {
     private func debouncedSearch(_ query: String) {
         // Cancel any existing debounce task
         searchTask?.cancel()
+        activeSearchTask?.cancel()
 
         // Don't search if query is empty
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -689,18 +842,22 @@ struct AddTVShowView: View {
     private func performSearch() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
+        activeSearchTask?.cancel()
         isSearching = true
         errorMessage = nil
 
-        Task {
+        activeSearchTask = Task {
             do {
                 let results = try await SonarrService.shared.searchShows(term: query)
                 await MainActor.run {
+                    guard !Task.isCancelled,
+                          searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
                     searchResults = results
                     isSearching = false
                 }
             } catch {
                 await MainActor.run {
+                    guard !Task.isCancelled else { return }
                     errorMessage = error.localizedDescription
                     isSearching = false
                 }
@@ -717,6 +874,7 @@ struct AddTVShowView: View {
     @State private var pendingShow: TVShow?
 
     private func addShow(_ show: TVShowLookup) {
+        guard addingShowId == nil else { return }
         guard canAddShow else {
             errorMessage = optionsErrorMessage ?? "Load a quality profile and root folder before adding a show."
             return
@@ -797,12 +955,18 @@ struct AddTVShowView: View {
 struct TVShowSearchResultCard: View {
     let show: TVShowLookup
     let isAdding: Bool
+    var isDisabled: Bool = false
     let onAdd: () -> Void
 
     @Environment(\.openURL) private var openURL
     @State private var trailerURL: URL?
     @State private var isLoadingTrailer = false
     @State private var trailerUnavailable = false
+
+    private var isInLibrary: Bool {
+        guard let sonarrId = show.sonarrId else { return false }
+        return sonarrId > 0
+    }
 
     private var posterURL: URL? {
         show.images?.first(where: { $0.coverType == "poster" })
@@ -870,22 +1034,31 @@ struct TVShowSearchResultCard: View {
 
                 Spacer(minLength: AppSpacing.sm)
 
-                // Add button
-                Button(action: onAdd) {
-                    if isAdding {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(width: 76, height: 34)
-                    } else {
-                        Text("Add")
-                            .font(AppTypography.caption1(.semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 76, height: 34)
-                            .background(ColorPalette.primary)
-                            .cornerRadius(AppRadius.sm)
+                if isInLibrary {
+                    Text("In Library")
+                        .font(AppTypography.caption1(.medium))
+                        .foregroundColor(ColorPalette.success)
+                        .frame(width: 86, height: 34)
+                        .background(ColorPalette.success.opacity(0.15))
+                        .cornerRadius(AppRadius.sm)
+                } else {
+                    Button(action: onAdd) {
+                        if isAdding {
+                            ProgressView()
+                                .tint(.white)
+                                .frame(width: 76, height: 34)
+                        } else {
+                            Text("Add")
+                                .font(AppTypography.caption1(.semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 76, height: 34)
+                                .background(ColorPalette.primary)
+                                .cornerRadius(AppRadius.sm)
+                        }
                     }
+                    .disabled(isAdding || isDisabled)
+                    .opacity(isDisabled && !isAdding ? 0.55 : 1)
                 }
-                .disabled(isAdding)
             }
         }
         .padding(AppSpacing.sm)

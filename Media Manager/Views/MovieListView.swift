@@ -203,6 +203,12 @@ struct MovieListView: View {
                             .foregroundColor(ColorPalette.secondary)
                         }
 
+                        NavigationLink(destination: RadarrCollectionsView()) {
+                            Image(systemName: "rectangle.stack")
+                                .foregroundColor(ColorPalette.secondary)
+                        }
+                        .accessibilityLabel("Radarr Collections")
+
                         NavigationLink(destination: AddMovieView(navigationPath: $navigationPath)) {
                             HStack(spacing: AppSpacing.xxs) {
                                 Image(systemName: "plus")
@@ -374,9 +380,7 @@ struct MovieListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for movie in selectedMovies() {
-                    try await RadarrService.shared.updateMovieMonitoring(movieId: movie.id, monitored: monitored)
-                }
+                try await RadarrService.shared.editMovies(ids: Array(selectedMovieIds), monitored: monitored)
                 await libraryManager.loadMovies(forceRefresh: true)
                 await MainActor.run {
                     selectedMovieIds.removeAll()
@@ -396,9 +400,7 @@ struct MovieListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for movie in selectedMovies() {
-                    try await RadarrService.shared.searchForMovie(movieId: movie.id)
-                }
+                try await RadarrService.shared.searchForMovies(ids: Array(selectedMovieIds))
                 await MainActor.run {
                     selectedMovieIds.removeAll()
                     isSelectionMode = false
@@ -417,11 +419,7 @@ struct MovieListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for movie in selectedMovies() {
-                    var updated = movie
-                    updated.qualityProfileId = profileId
-                    try await RadarrService.shared.updateMovie(movie: updated)
-                }
+                try await RadarrService.shared.editMovies(ids: Array(selectedMovieIds), qualityProfileId: profileId)
                 await libraryManager.loadMovies(forceRefresh: true)
                 await MainActor.run {
                     selectedMovieIds.removeAll()
@@ -441,9 +439,7 @@ struct MovieListView: View {
         isRunningBulkAction = true
         Task {
             do {
-                for movie in selectedMovies() {
-                    try await RadarrService.shared.deleteMovie(id: movie.id, deleteFiles: deleteFiles)
-                }
+                try await RadarrService.shared.deleteMovies(ids: Array(selectedMovieIds), deleteFiles: deleteFiles)
                 await libraryManager.loadMovies(forceRefresh: true)
                 await MainActor.run {
                     selectedMovieIds.removeAll()

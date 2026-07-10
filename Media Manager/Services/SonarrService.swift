@@ -40,7 +40,7 @@ class SonarrService {
     /// Creates an authenticated URLRequest with API key header and timeout
     private func authenticatedRequest(url: URL, apiKey: String? = nil) -> URLRequest {
         var request = URLRequest(url: url)
-        request.timeoutInterval = 15
+        request.timeoutInterval = 30
         request.setValue(apiKey ?? self.apiKey, forHTTPHeaderField: "X-Api-Key")
         return request
     }
@@ -282,7 +282,7 @@ class SonarrService {
     }
 
     /// Updates an existing TV show in Sonarr
-    func updateShow(show: TVShow) async throws {
+    func updateShow(show: TVShow, moveFiles: Bool = false) async throws {
         // Fetch fresh show data from API to get all required fields
         guard let getURL = URL(string: "\(baseURL)/series/\(show.id)") else {
             throw URLError(.badURL)
@@ -316,11 +316,14 @@ class SonarrService {
         if let tags = show.tags {
             showDict["tags"] = tags
         }
+        if let rootFolderPath = show.rootFolderPath {
+            showDict["rootFolderPath"] = rootFolderPath
+        }
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: showDict)
 
-        guard let url = URL(string: "\(baseURL)/series/\(show.id)") else {
+        guard let url = URL(string: "\(baseURL)/series/\(show.id)?moveFiles=\(moveFiles)") else {
             throw URLError(.badURL)
         }
 
@@ -338,6 +341,98 @@ class SonarrService {
 
         // Invalidate shows cache after update
         await CacheManager.shared.remove(CacheManager.CacheKey.sonarrShows)
+    }
+
+    /// Uses Sonarr's native series editor so multi-select changes are one request.
+    func editShows(
+        ids: [Int],
+        monitored: Bool? = nil,
+        qualityProfileId: Int? = nil,
+        monitorNewItems: SonarrNewItemMonitor? = nil,
+        seriesType: SonarrSeriesType? = nil,
+        seasonFolder: Bool? = nil,
+        rootFolderPath: String? = nil,
+        tagIds: [Int]? = nil,
+        moveFiles: Bool = false
+    ) async throws {
+        guard !ids.isEmpty, let url = URL(string: "\(baseURL)/series/editor") else {
+            throw URLError(.badURL)
+        }
+
+        var payload: [String: Any] = ["seriesIds": ids, "moveFiles": moveFiles]
+        if let monitored { payload["monitored"] = monitored }
+        if let qualityProfileId { payload["qualityProfileId"] = qualityProfileId }
+        if let monitorNewItems { payload["monitorNewItems"] = monitorNewItems.rawValue }
+        if let seriesType { payload["seriesType"] = seriesType.rawValue }
+        if let seasonFolder { payload["seasonFolder"] = seasonFolder }
+        if let rootFolderPath { payload["rootFolderPath"] = rootFolderPath }
+        if let tagIds {
+            payload["tags"] = tagIds
+            payload["applyTags"] = "replace"
+        }
+
+        try await sendJSONRequest(url: url, method: "PUT", payload: payload)
+        await CacheManager.shared.remove(CacheManager.CacheKey.sonarrShows)
+    }
+
+    func deleteShows(ids: [Int], deleteFiles: Bool, addImportExclusion: Bool = false) async throws {
+        guard !ids.isEmpty, let url = URL(string: "\(baseURL)/series/editor") else {
+            throw URLError(.badURL)
+        }
+        try await sendJSONRequest(url: url, method: "DELETE", payload: [
+            "seriesIds": ids,
+            "deleteFiles": deleteFiles,
+            "addImportListExclusion": addImportExclusion
+        ])
+        await CacheManager.shared.remove(CacheManager.CacheKey.sonarrShows)
+    }
+
+    func searchForShows(ids: [Int]) async throws {
+        guard !ids.isEmpty else { return }
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            for id in ids {
+                group.addTask { try await self.searchForShow(seriesId: id) }
+            }
+            try await group.waitForAll()
+        }
+    }
+
+    func refreshShow(seriesId: Int) async throws {
+        try await runCommand(name: "RefreshSeries", values: ["seriesId": seriesId])
+    }
+
+    func renameShow(seriesId: Int) async throws {
+        try await runCommand(name: "RenameSeries", values: ["seriesIds": [seriesId]])
+    }
+
+    func searchForSeason(seriesId: Int, seasonNumber: Int) async throws {
+        try await runCommand(name: "SeasonSearch", values: [
+            "seriesId": seriesId,
+            "seasonNumber": seasonNumber
+        ])
+    }
+
+    private func runCommand(name: String, values: [String: Any] = [:]) async throws {
+        guard let url = URL(string: "\(baseURL)/command") else { throw URLError(.badURL) }
+        var payload = values
+        payload["name"] = name
+        try await sendJSONRequest(url: url, method: "POST", payload: payload)
+    }
+
+    private func sendJSONRequest(url: URL, method: String, payload: [String: Any]) async throws {
+        var request = authenticatedRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            if let errors = try? JSONDecoder().decode([RadarrErrorResponse].self, from: data),
+               let message = errors.first?.errorMessage {
+                throw SonarrError.apiError(message)
+            }
+            throw URLError(.badServerResponse)
+        }
     }
 
     /// Deletes a TV show from Sonarr
@@ -605,6 +700,24 @@ class SonarrService {
         }
     }
 
+    /// Fetches every episode in a date range from Sonarr's calendar endpoint.
+    func fetchCalendar(start: Date, end: Date, includeUnmonitored: Bool = false) async throws -> [Episode] {
+        var components = URLComponents(string: "\(baseURL)/calendar")
+        let formatter = ISO8601DateFormatter()
+        components?.queryItems = [
+            URLQueryItem(name: "start", value: formatter.string(from: start)),
+            URLQueryItem(name: "end", value: formatter.string(from: end)),
+            URLQueryItem(name: "unmonitored", value: String(includeUnmonitored)),
+            URLQueryItem(name: "includeSeries", value: "true")
+        ]
+        guard let url = components?.url else { throw URLError(.badURL) }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode([Episode].self, from: data)
+    }
+
     /// Direct API call for episodes
     private func fetchEpisodesFromAPI(seriesId: Int) async throws -> [Episode] {
         guard let url = URL(string: "\(baseURL)/episode?seriesId=\(seriesId)") else {
@@ -655,8 +768,17 @@ class SonarrService {
     }
 
     func updateEpisodes(_ episodes: [Episode], monitored: Bool) async throws {
-        for episode in episodes {
-            try await updateEpisode(episodeId: episode.id, monitored: monitored)
+        guard !episodes.isEmpty, let url = URL(string: "\(baseURL)/episode/monitor") else {
+            return
+        }
+        try await sendJSONRequest(
+            url: url,
+            method: "PUT",
+            payload: ["episodeIds": episodes.map(\.id), "monitored": monitored]
+        )
+        let seriesIds = Set(episodes.map(\.seriesId))
+        for seriesId in seriesIds {
+            await CacheManager.shared.remove(CacheManager.CacheKey.episodes(seriesId))
         }
     }
 
@@ -785,6 +907,41 @@ class SonarrService {
         await CacheManager.shared.remove(CacheManager.CacheKey.sonarrQueue)
     }
 
+    // MARK: - History and Blocklist
+
+    func fetchHistory(pageSize: Int = 50) async throws -> [ArrActivityRecord] {
+        try await fetchActivityRecords(endpoint: "history", pageSize: pageSize)
+    }
+
+    func fetchBlocklist(pageSize: Int = 50) async throws -> [ArrActivityRecord] {
+        try await fetchActivityRecords(endpoint: "blocklist", pageSize: pageSize)
+    }
+
+    func deleteBlocklistItem(id: Int) async throws {
+        guard let url = URL(string: "\(baseURL)/blocklist/\(id)") else { throw URLError(.badURL) }
+        var request = authenticatedRequest(url: url)
+        request.httpMethod = "DELETE"
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+    }
+
+    private func fetchActivityRecords(endpoint: String, pageSize: Int) async throws -> [ArrActivityRecord] {
+        var components = URLComponents(string: "\(baseURL)/\(endpoint)")
+        components?.queryItems = [
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "pageSize", value: String(pageSize)),
+            URLQueryItem(name: "sortKey", value: "date"),
+            URLQueryItem(name: "sortDirection", value: "descending")
+        ]
+        guard let url = components?.url else { throw URLError(.badURL) }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(ArrActivityResponse.self, from: data).records
+    }
+
     // MARK: - Wanted/Missing
 
     /// Fetches wanted/missing episodes
@@ -828,6 +985,18 @@ class SonarrService {
 
         let wantedResponse = try JSONDecoder().decode(WantedResponse.self, from: data)
         return wantedResponse.records
+    }
+
+    func fetchCutoffUnmet() async throws -> [Episode] {
+        guard let url = URL(string: "\(baseURL)/wanted/cutoff?page=1&pageSize=100&sortKey=airDateUtc&sortDirection=descending&includeSeries=true") else {
+            throw URLError(.badURL)
+        }
+        let request = authenticatedRequest(url: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw URLError(.badServerResponse) }
+        struct Response: Codable { let records: [Episode] }
+        return try JSONDecoder().decode(Response.self, from: data).records
     }
 
     // MARK: - Backups

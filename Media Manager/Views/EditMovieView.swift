@@ -8,7 +8,10 @@ struct EditMovieView: View {
     @State private var selectedQualityProfileId: Int
     @State private var selectedMinimumAvailability: RadarrMinimumAvailability
     @State private var selectedTagIds: Set<Int>
+    @State private var selectedRootFolderPath: String
+    @State private var moveFiles = true
     @State private var qualityProfiles: [RadarrQualityProfile] = []
+    @State private var rootFolders: [RootFolder] = []
     @State private var tags: [MediaTag] = []
     @State private var isLoadingOptions = true
     @State private var isSaving = false
@@ -20,6 +23,7 @@ struct EditMovieView: View {
         _selectedQualityProfileId = State(initialValue: movie.qualityProfileId ?? 1)
         _selectedMinimumAvailability = State(initialValue: RadarrMinimumAvailability(rawValue: movie.minimumAvailability ?? "") ?? .released)
         _selectedTagIds = State(initialValue: Set(movie.tags ?? []))
+        _selectedRootFolderPath = State(initialValue: movie.rootFolderPath ?? "")
     }
 
     private var selectedTagSummary: String {
@@ -125,6 +129,39 @@ struct EditMovieView: View {
                                         .stroke(ColorPalette.divider, lineWidth: 1)
                                 )
                             }
+
+                            if !rootFolders.isEmpty {
+                                HStack {
+                                    Label("Root Folder", systemImage: "folder")
+                                        .font(AppTypography.body())
+                                        .foregroundColor(ColorPalette.textPrimaryDark)
+                                    Spacer()
+                                    Picker("Root Folder", selection: $selectedRootFolderPath) {
+                                        ForEach(rootFolders) { folder in
+                                            Text(folder.folderName).tag(folder.path)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .tint(ColorPalette.secondary)
+                                }
+                                .padding(.vertical, AppSpacing.sm)
+                                .padding(.horizontal, AppSpacing.md)
+                                .background(ColorPalette.cardBackgroundDark)
+                                .cornerRadius(AppRadius.md)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: AppRadius.md)
+                                        .stroke(ColorPalette.divider, lineWidth: 1)
+                                )
+
+                                if selectedRootFolderPath != (movie.rootFolderPath ?? "") {
+                                    Toggle("Move existing files", isOn: $moveFiles)
+                                        .tint(ColorPalette.primary)
+                                        .padding(.vertical, AppSpacing.sm)
+                                        .padding(.horizontal, AppSpacing.md)
+                                        .background(ColorPalette.cardBackgroundDark)
+                                        .cornerRadius(AppRadius.md)
+                                }
+                            }
                         }
                         .padding(.horizontal, AppSpacing.md)
 
@@ -219,16 +256,26 @@ struct EditMovieView: View {
         Task {
             do {
                 async let profilesTask = RadarrService.shared.fetchQualityProfiles()
-                async let tagsTask: [MediaTag] = (try? await RadarrService.shared.fetchTags()) ?? []
-                let (profiles, fetchedTags) = try await (profilesTask, tagsTask)
+                async let foldersTask = RadarrService.shared.fetchRootFolders()
+                async let tagsTask: [MediaTag]? = try? await RadarrService.shared.fetchTags()
+                let (profiles, folders, fetchedTags) = try await (profilesTask, foldersTask, tagsTask)
                 await MainActor.run {
                     qualityProfiles = profiles
-                    tags = fetchedTags
-                    selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    rootFolders = folders
+                    if selectedRootFolderPath.isEmpty {
+                        selectedRootFolderPath = folders.first?.path ?? ""
+                    }
+                    if let fetchedTags {
+                        tags = fetchedTags
+                        selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
+                    } else {
+                        errorMessage = "Tags could not be loaded. Existing tags will be preserved."
+                    }
                     isLoadingOptions = false
                 }
             } catch {
                 await MainActor.run {
+                    errorMessage = "Could not load editing options: \(error.localizedDescription)"
                     isLoadingOptions = false
                 }
             }
@@ -255,14 +302,15 @@ struct EditMovieView: View {
             physicalRelease: movie.physicalRelease,
             inCinemas: movie.inCinemas,
             minimumAvailability: selectedMinimumAvailability.rawValue,
-            rootFolderPath: movie.rootFolderPath,
+            rootFolderPath: selectedRootFolderPath,
             path: movie.path,
             tags: selectedTagIds.sorted()
         )
 
         Task {
             do {
-                try await RadarrService.shared.updateMovie(movie: updatedMovie)
+                let rootChanged = selectedRootFolderPath != (movie.rootFolderPath ?? "")
+                try await RadarrService.shared.updateMovie(movie: updatedMovie, moveFiles: rootChanged && moveFiles)
                 await MainActor.run {
                     dismiss()
                 }

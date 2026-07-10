@@ -37,37 +37,55 @@ enum WhatsNewCatalog {
         WhatsNewRelease(
             id: "2026-06-29-build-8",
             title: "Version 2.7 Build 8",
-            subtitle: "Remembered add settings, richer management controls, and SABnzbd downloads cleanup",
+            subtitle: "Guided adding, deeper Radarr and Sonarr controls, and richer activity tracking",
             entries: [
                 WhatsNewEntry(
-                    id: "remembered-add-preferences",
+                    id: "guided-add-workflows",
                     kind: .newFeature,
-                    title: "Remembered Add Preferences",
-                    description: "Movie and TV add screens now remember your preferred quality profile, root folder, monitoring, search, and tag choices for the next item you add."
+                    title: "Guided Movie and TV Adds",
+                    description: "Choose Download Now, Monitor Only, Add Only, or Future Episodes presets, review a confirmation summary, and expand advanced options only when you need them."
                 ),
                 WhatsNewEntry(
-                    id: "expanded-radarr-sonarr-controls",
-                    kind: .newFeature,
-                    title: "More Add and Edit Controls",
-                    description: "Radarr adds now support minimum availability, monitored state, and tags. Sonarr adds now support series type, new episode monitoring, season folders, cutoff-unmet search, and tags."
-                ),
-                WhatsNewEntry(
-                    id: "management-details",
+                    id: "shared-add-defaults",
                     kind: .improvement,
-                    title: "Clearer Management Details",
-                    description: "Movie and TV detail screens now show management metadata such as location, availability or series type, new episode behavior, season folder setting, and tag labels when available."
+                    title: "Defaults Shared Everywhere",
+                    description: "Quality profiles, root folders, monitoring, search behavior, series settings, and tags are remembered and shared by full adds, Discover, Quick Add, Siri, and Apple Watch."
                 ),
                 WhatsNewEntry(
-                    id: "sabnzbd-downloads-refresh",
-                    kind: .fix,
-                    title: "SABnzbd Downloads Cleanup",
-                    description: "Active downloads now refresh from the SABnzbd queue while visible, history uses SABnzbd history, and queue/history errors no longer interfere with each other."
+                    id: "radarr-collections",
+                    kind: .newFeature,
+                    title: "Radarr Collections",
+                    description: "Browse movie collections, change collection monitoring, search for missing titles, and control whether newly added collection movies are monitored and searched."
                 ),
                 WhatsNewEntry(
-                    id: "sabnzbd-history-decoding",
+                    id: "expanded-editing-tools",
+                    kind: .improvement,
+                    title: "Deeper Movie and Show Editing",
+                    description: "Change quality profiles and root folders, optionally move existing files, refresh and scan, rename files, and search individual TV seasons directly from detail screens."
+                ),
+                WhatsNewEntry(
+                    id: "bulk-library-actions",
+                    kind: .newFeature,
+                    title: "Bulk Library Actions",
+                    description: "Update monitoring and quality profiles, search multiple movies or shows, and remove selected library items using Radarr and Sonarr's native editor operations."
+                ),
+                WhatsNewEntry(
+                    id: "activity-wanted-management",
+                    kind: .newFeature,
+                    title: "Activity, Wanted, and Blocklist",
+                    description: "Downloads now includes Radarr and Sonarr queue, history, and blocklist views plus Missing and Cutoff Unmet lists with direct search actions."
+                ),
+                WhatsNewEntry(
+                    id: "complete-sonarr-calendar",
+                    kind: .improvement,
+                    title: "Complete TV Episode Calendar",
+                    description: "The calendar now loads Sonarr's full date range so every scheduled episode appears instead of showing only each series' next airing."
+                ),
+                WhatsNewEntry(
+                    id: "safer-media-operations",
                     kind: .fix,
-                    title: "More Reliable Download Statuses",
-                    description: "SABnzbd queue and history parsing now handles mixed field formats and statuses like Moving, Running, and Quick Check without dropping the downloads view into an error state."
+                    title: "Safer Adds and Queue Actions",
+                    description: "Exact Radarr and Sonarr IDs prevent duplicate or mismatched adds, errors stay visible without hiding results, and queue removal clearly offers Remove Only or Remove and Block Release."
                 )
             ]
         ),

@@ -72,7 +72,7 @@ struct AddMovieIntent: AppIntent {
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
-            let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+            let tags = try? await RadarrService.shared.fetchTags()
             var preferences = AddMediaPreferences.shared.radarrSettings(
                 profiles: qualityProfiles,
                 rootFolders: rootFolders,
@@ -88,6 +88,7 @@ struct AddMovieIntent: AppIntent {
                 rootFolderPath: preferences.rootFolderPath,
                 minimumAvailability: preferences.minimumAvailability,
                 monitored: preferences.monitored,
+                monitorOption: preferences.monitorOption,
                 searchForMovie: preferences.searchForMovie,
                 tagIds: preferences.tagIds
             )
@@ -158,7 +159,7 @@ struct QuickAddMovieIntent: AppIntent {
             // Get defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
-            let tags = (try? await RadarrService.shared.fetchTags()) ?? []
+            let tags = try? await RadarrService.shared.fetchTags()
             let preferences = AddMediaPreferences.shared.radarrSettings(
                 profiles: qualityProfiles,
                 rootFolders: rootFolders,
@@ -171,6 +172,7 @@ struct QuickAddMovieIntent: AppIntent {
                 rootFolderPath: preferences.rootFolderPath,
                 minimumAvailability: preferences.minimumAvailability,
                 monitored: preferences.monitored,
+                monitorOption: preferences.monitorOption,
                 searchForMovie: preferences.searchForMovie,
                 tagIds: preferences.tagIds
             )
