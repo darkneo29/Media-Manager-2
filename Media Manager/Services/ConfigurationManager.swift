@@ -86,6 +86,7 @@ final class ConfigurationManager: ObservableObject {
             if invalidateCaches {
                 await CacheManager.shared.clearAll()
                 await ImageCacheManager.shared.clearAll()
+                await UnraidService.shared.invalidateCache()
                 WidgetDataService.shared.clearWidgetData()
             }
         }
@@ -108,24 +109,24 @@ final class ConfigurationManager: ObservableObject {
 
     func saveRadarr(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(Self.normalizedServerURL(url), forKey: Keys.radarrURL)
         try credentialStore.set(apiKey, for: .radarrAPIKey)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.radarrURL)
         refreshConfiguration()
         invalidateRadarrState()
     }
 
     func saveSonarr(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sonarrURL)
         try credentialStore.set(apiKey, for: .sonarrAPIKey)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sonarrURL)
         refreshConfiguration()
         invalidateSonarrState()
     }
 
     func saveSabNZB(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sabnzbURL)
         try credentialStore.set(apiKey, for: .sabnzbAPIKey)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.sabnzbURL)
         refreshConfiguration()
     }
 
@@ -137,9 +138,12 @@ final class ConfigurationManager: ObservableObject {
 
     func saveUnraid(url: String, apiKey: String) throws {
         let defaults = UserDefaults.standard
-        defaults.set(Self.normalizedServerURL(url), forKey: Keys.unraidURL)
         try credentialStore.set(apiKey, for: .unraidAPIKey)
+        defaults.set(Self.normalizedServerURL(url), forKey: Keys.unraidURL)
         refreshConfiguration()
+        Task {
+            await UnraidService.shared.invalidateCache()
+        }
     }
 
     // MARK: - Configuration Validation

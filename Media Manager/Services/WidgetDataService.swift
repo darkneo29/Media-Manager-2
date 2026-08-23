@@ -11,6 +11,7 @@ import WidgetKit
 #endif
 
 /// Service for managing widget data in App Group shared storage
+@MainActor
 class WidgetDataService {
     static let shared = WidgetDataService()
 
@@ -28,6 +29,7 @@ class WidgetDataService {
     }
 
     private var lastReloadDate: Date?
+    private var deferredReloadTask: Task<Void, Never>?
 
     /// Shared UserDefaults for App Group
     private var sharedDefaults: UserDefaults? {
@@ -271,20 +273,52 @@ class WidgetDataService {
         #if !os(tvOS)
         let now = Date()
 
-        if !force,
-           let lastReloadDate,
+        if force {
+            deferredReloadTask?.cancel()
+            deferredReloadTask = nil
+            performReload(reason: reason, at: now)
+            return
+        }
+
+        if let lastReloadDate,
            now.timeIntervalSince(lastReloadDate) < Self.reloadThrottleInterval {
+            let remainingInterval = Self.reloadThrottleInterval - now.timeIntervalSince(lastReloadDate)
+            scheduleDeferredReload(after: remainingInterval, reason: reason)
             #if DEBUG
             print("Widget reload attempt: throttled (requested=\(reason))")
             #endif
             return
         }
 
+        deferredReloadTask?.cancel()
+        deferredReloadTask = nil
+        performReload(reason: reason, at: now)
+        #endif
+    }
+
+    #if !os(tvOS)
+    private func scheduleDeferredReload(after interval: TimeInterval, reason: String) {
+        guard deferredReloadTask == nil else { return }
+
+        let nanoseconds = UInt64(max(0, interval) * 1_000_000_000)
+        deferredReloadTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: nanoseconds)
+            } catch {
+                return
+            }
+            guard let self, !Task.isCancelled else { return }
+            self.deferredReloadTask = nil
+            self.performReload(reason: "deferred_\(reason)", at: Date())
+        }
+    }
+
+    private func performReload(reason: String, at date: Date) {
         WidgetCenter.shared.reloadTimelines(ofKind: Self.widgetKind)
-        self.lastReloadDate = now
+        lastReloadDate = date
         #if DEBUG
         print("Widget reload attempt: \(reason)")
         #endif
-        #endif
     }
+    #endif
 }

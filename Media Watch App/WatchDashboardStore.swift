@@ -18,6 +18,7 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     private let encoder = JSONEncoder()
     private let snapshotDefaultsKey = "watchDashboardSnapshot"
     private var activationStarted = false
+    private var refreshRequestGeneration = 0
 
     override init() {
         super.init()
@@ -38,10 +39,15 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     }
 
     func toggleDownloads() {
-        send(command: WatchConnectivityCommand.toggleDownloads)
+        send(
+            command: WatchConnectivityCommand.toggleDownloads,
+            queueWhenUnreachable: false
+        )
     }
 
     func searchMedia(kind: WatchMediaKind, query: String) {
+        guard !isSearching, addingResultId == nil else { return }
+
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             mediaActionStatus = "Say a movie or show title first."
@@ -84,6 +90,8 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     }
 
     func addMedia(_ result: WatchMediaSearchResult) {
+        guard addingResultId == nil, !isSearching else { return }
+
         activate()
         guard WCSession.isSupported(), WCSession.default.isReachable else {
             mediaActionStatus = "Open the iPhone app to add."
@@ -116,13 +124,15 @@ final class WatchDashboardStore: NSObject, ObservableObject {
         }
     }
 
-    private func send(command: String) {
+    private func send(command: String, queueWhenUnreachable: Bool = true) {
         activate()
         guard WCSession.isSupported() else {
             connectionStatus = "Sync unavailable"
             return
         }
 
+        refreshRequestGeneration += 1
+        let requestGeneration = refreshRequestGeneration
         isRefreshing = true
         let message = [WatchConnectivityKey.command: command]
         let session = WCSession.default
@@ -130,17 +140,33 @@ final class WatchDashboardStore: NSObject, ObservableObject {
         if session.isReachable {
             session.sendMessage(message, replyHandler: nil) { [weak self] _ in
                 Task { @MainActor in
+                    guard self?.refreshRequestGeneration == requestGeneration else { return }
                     self?.connectionStatus = "Open iPhone app to sync"
                     self?.isRefreshing = false
                 }
             }
-        } else {
+            stopRefreshIndicatorAfterTimeout(for: requestGeneration)
+        } else if queueWhenUnreachable {
             session.transferUserInfo(message)
             connectionStatus = "Queued for iPhone"
             Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard refreshRequestGeneration == requestGeneration else { return }
                 isRefreshing = false
             }
+        } else {
+            connectionStatus = "Open iPhone app to control"
+            isRefreshing = false
+        }
+    }
+
+    private func stopRefreshIndicatorAfterTimeout(for requestGeneration: Int) {
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 10_000_000_000)
+            guard let self,
+                  self.refreshRequestGeneration == requestGeneration,
+                  self.isRefreshing else { return }
+            self.isRefreshing = false
         }
     }
 
@@ -244,7 +270,7 @@ extension WatchDashboardStore: WCSessionDelegate {
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
-            self.connectionStatus = session.isReachable ? "Connected" : self.connectionStatus
+            self.connectionStatus = session.isReachable ? "Connected" : "Waiting for iPhone"
         }
     }
 

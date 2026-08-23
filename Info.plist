@@ -5,6 +5,8 @@
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
 			<key>CFBundleTypeName</key>
 			<string>Dragon Media Manager Backup</string>
 			<key>LSHandlerRank</key>

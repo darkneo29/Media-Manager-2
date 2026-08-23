@@ -336,7 +336,7 @@ struct QueueItem: Codable, Identifiable, Hashable {
     /// Progress percentage (0-100)
     var progress: Double {
         guard size > 0 else { return 0 }
-        return ((size - sizeleft) / size) * 100
+        return min(max(((size - sizeleft) / size) * 100, 0), 100)
     }
 
     /// Formatted size string

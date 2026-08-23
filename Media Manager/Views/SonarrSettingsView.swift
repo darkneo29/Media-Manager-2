@@ -20,7 +20,12 @@ struct SonarrSettingsView: View {
         }
         .navigationTitle("Sonarr Settings")
         .onAppear(perform: loadSettings)
-        .onDisappear(perform: saveSettingsSilently)
+        .onChange(of: editingURL) { _, _ in invalidateConnectionTest() }
+        .onChange(of: editingAPIKey) { _, _ in invalidateConnectionTest() }
+        .onDisappear {
+            testAttemptId = UUID()
+            saveSettingsSilently()
+        }
         #if !os(tvOS)
         .navBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -228,21 +233,38 @@ struct SonarrSettingsView: View {
         try? configuration.saveSonarr(url: editingURL, apiKey: editingAPIKey)
     }
 
+    private func invalidateConnectionTest() {
+        testAttemptId = UUID()
+        connectionStatus = .idle
+    }
+
     private func testConnection() {
         connectionStatus = .testing
         let currentAttempt = UUID()
         testAttemptId = currentAttempt
+        let testedURL = editingURL
+        let testedAPIKey = editingAPIKey
 
         Task {
             do {
-                try await SonarrService.shared.testConnection(url: editingURL, apiKey: editingAPIKey)
+                try await SonarrService.shared.testConnection(url: testedURL, apiKey: testedAPIKey)
                 await MainActor.run {
-                    saveSettingsSilently()
-                    connectionStatus = .success
+                    guard testAttemptId == currentAttempt,
+                          editingURL == testedURL,
+                          editingAPIKey == testedAPIKey else { return }
+                    do {
+                        try configuration.saveSonarr(url: testedURL, apiKey: testedAPIKey)
+                        connectionStatus = .success
+                    } catch {
+                        connectionStatus = .failure("Connected, but settings could not be saved: \(error.localizedDescription)")
+                    }
                     resetStatusAfterDelay(attemptId: currentAttempt)
                 }
             } catch {
                 await MainActor.run {
+                    guard testAttemptId == currentAttempt,
+                          editingURL == testedURL,
+                          editingAPIKey == testedAPIKey else { return }
                     connectionStatus = .failure("Could not connect to server")
                     resetStatusAfterDelay(attemptId: currentAttempt)
                 }

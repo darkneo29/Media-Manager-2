@@ -79,7 +79,6 @@ struct AddMovieIntent: AppIntent {
                 tags: tags
             )
             preferences.searchForMovie = searchForMovie
-            AddMediaPreferences.shared.saveRadarr(preferences)
 
             // Add the movie
             let addedMovie = try await RadarrService.shared.addMovie(
@@ -102,7 +101,8 @@ struct AddMovieIntent: AppIntent {
         } catch {
             // Check if it's an "already exists" error
             let errorMessage = error.localizedDescription
-            if errorMessage.contains("already") || errorMessage.contains("exists") {
+            if errorMessage.localizedCaseInsensitiveContains("already") ||
+                errorMessage.localizedCaseInsensitiveContains("exists") {
                 return .result(
                     value: "Movie already in library",
                     dialog: "This movie is already in your Radarr library."
@@ -184,7 +184,8 @@ struct QuickAddMovieIntent: AppIntent {
 
         } catch {
             let errorMessage = error.localizedDescription
-            if errorMessage.contains("already") || errorMessage.contains("exists") {
+            if errorMessage.localizedCaseInsensitiveContains("already") ||
+                errorMessage.localizedCaseInsensitiveContains("exists") {
                 return .result(
                     value: "Movie already exists",
                     dialog: "This movie is already in your library."

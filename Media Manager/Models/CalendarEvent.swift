@@ -88,6 +88,22 @@ struct CalendarEvent: Identifiable, Hashable {
         }
     }
 
+    /// Deterministic identity for persisted/bridged representations. Calendar
+    /// events are rebuilt frequently and their in-memory UUID is intentionally
+    /// ephemeral, but widgets and Watch snapshots need stable identities.
+    var stableIdentifier: String {
+        let sourceKind = isMovie ? "movie" : "tvshow"
+        let eventKind: String
+        switch type {
+        case .movieRelease(let releaseType):
+            eventKind = releaseType.rawValue
+        case .tvEpisode:
+            eventKind = "episode"
+        }
+        let timestampMilliseconds = Int64((date.timeIntervalSince1970 * 1_000).rounded())
+        return "\(sourceKind):\(libraryItemId):\(eventKind):\(timestampMilliseconds):\(title)"
+    }
+
     /// Relative timing label for dashboard and release radar surfaces.
     var relativeDateLabel: String {
         let calendar = Calendar.current

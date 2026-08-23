@@ -48,6 +48,9 @@ class LibraryStateManager: ObservableObject {
     private var _recentlyAddedShows: [TVShow]?
     private var _sortedMovies: [Movie]?
     private var _sortedShows: [TVShow]?
+    private var moviesLoadGeneration: UInt64 = 0
+    private var showsLoadGeneration: UInt64 = 0
+    private var profilesLoadGeneration: UInt64 = 0
 
     /// Invalidate all cached indexes when data changes
     private func invalidateCachedIndexes() {
@@ -311,19 +314,26 @@ class LibraryStateManager: ObservableObject {
             return
         }
 
-        guard !isLoadingMovies else { return }
+        guard forceRefresh || !isLoadingMovies else { return }
+        moviesLoadGeneration &+= 1
+        let loadGeneration = moviesLoadGeneration
         isLoadingMovies = true
 
         do {
-            movies = try await RadarrService.shared.fetchMovies(forceRefresh: forceRefresh)
+            let fetchedMovies = try await RadarrService.shared.fetchMovies(forceRefresh: forceRefresh)
+            guard loadGeneration == moviesLoadGeneration else { return }
+            movies = fetchedMovies
             lastMoviesRefresh = Date()
             moviesErrorMessage = nil
         } catch {
+            guard loadGeneration == moviesLoadGeneration else { return }
             // Keep existing data on error
             moviesErrorMessage = userFacingLoadError(service: "Radarr", error: error)
         }
 
-        isLoadingMovies = false
+        if loadGeneration == moviesLoadGeneration {
+            isLoadingMovies = false
+        }
     }
 
     /// Load TV shows from Sonarr
@@ -334,36 +344,50 @@ class LibraryStateManager: ObservableObject {
             return
         }
 
-        guard !isLoadingShows else { return }
+        guard forceRefresh || !isLoadingShows else { return }
+        showsLoadGeneration &+= 1
+        let loadGeneration = showsLoadGeneration
         isLoadingShows = true
 
         do {
-            tvShows = try await SonarrService.shared.fetchShows(forceRefresh: forceRefresh)
+            let fetchedShows = try await SonarrService.shared.fetchShows(forceRefresh: forceRefresh)
+            guard loadGeneration == showsLoadGeneration else { return }
+            tvShows = fetchedShows
             lastShowsRefresh = Date()
             showsErrorMessage = nil
         } catch {
+            guard loadGeneration == showsLoadGeneration else { return }
             // Keep existing data on error
             showsErrorMessage = userFacingLoadError(service: "Sonarr", error: error)
         }
 
-        isLoadingShows = false
+        if loadGeneration == showsLoadGeneration {
+            isLoadingShows = false
+        }
     }
 
     /// Load quality profiles from Sonarr (cached for 24 hours)
     func loadQualityProfiles(forceRefresh: Bool = false) async {
-        guard !isLoadingProfiles else { return }
+        guard forceRefresh || !isLoadingProfiles else { return }
+        profilesLoadGeneration &+= 1
+        let loadGeneration = profilesLoadGeneration
         isLoadingProfiles = true
 
         do {
-            qualityProfiles = try await SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
+            let fetchedProfiles = try await SonarrService.shared.fetchQualityProfiles(forceRefresh: forceRefresh)
+            guard loadGeneration == profilesLoadGeneration else { return }
+            qualityProfiles = fetchedProfiles
             lastProfilesRefresh = Date()
             qualityProfilesErrorMessage = nil
         } catch {
+            guard loadGeneration == profilesLoadGeneration else { return }
             // Keep existing data on error
             qualityProfilesErrorMessage = userFacingLoadError(service: "Sonarr", error: error)
         }
 
-        isLoadingProfiles = false
+        if loadGeneration == profilesLoadGeneration {
+            isLoadingProfiles = false
+        }
     }
 
     // MARK: - Cache Invalidation

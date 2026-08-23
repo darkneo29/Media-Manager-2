@@ -100,7 +100,7 @@ extension WidgetEvent {
         }
 
         return WidgetEvent(
-            id: calendarEvent.id.uuidString,
+            id: calendarEvent.stableIdentifier,
             title: calendarEvent.title,
             date: calendarEvent.date,
             isMovie: isMovie,

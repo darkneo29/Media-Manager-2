@@ -77,11 +77,15 @@ struct ToastModifier: ViewModifier {
                     ToastView(message: message, style: style)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(100)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
+                        .task(id: message) {
+                            do {
+                                try await Task.sleep(for: .seconds(duration))
+                                guard !Task.isCancelled else { return }
                                 withAnimation(.easeInOut(duration: 0.3)) {
                                     isShowing = false
                                 }
+                            } catch {
+                                // The toast disappeared or was replaced.
                             }
                         }
                 }

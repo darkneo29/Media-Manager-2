@@ -23,7 +23,7 @@ final class BackupEncryptionService {
             throw BackupError.passphraseRequired
         }
 
-        let salt = randomData(count: saltLength)
+        let salt = try randomData(count: saltLength)
         let key = try deriveKey(passphrase: normalizedPassphrase, salt: salt, iterations: iterations, keyLength: keyLength)
         let plaintext = try JSONEncoder().encode(secrets)
         let sealedBox = try AES.GCM.seal(plaintext, using: key)
@@ -41,6 +41,15 @@ final class BackupEncryptionService {
         let normalizedPassphrase = passphrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedPassphrase.isEmpty else {
             throw BackupError.passphraseRequired
+        }
+
+        guard (10_000...1_000_000).contains(encryptedSecrets.iterations),
+              (8...64).contains(encryptedSecrets.salt.count),
+              encryptedSecrets.nonce.count == 12,
+              encryptedSecrets.tag.count == 16,
+              !encryptedSecrets.ciphertext.isEmpty,
+              encryptedSecrets.ciphertext.count <= 1_048_576 else {
+            throw BackupError.invalidBackupFile
         }
 
         let key = try deriveKey(
@@ -96,11 +105,16 @@ final class BackupEncryptionService {
         return SymmetricKey(data: derivedKeyData)
     }
 
-    private func randomData(count: Int) -> Data {
+    private func randomData(count: Int) throws -> Data {
+        guard count > 0 else { throw BackupError.encryptionFailed }
         var data = Data(count: count)
-        _ = data.withUnsafeMutableBytes { bytes in
-            SecRandomCopyBytes(kSecRandomDefault, count, bytes.bindMemory(to: UInt8.self).baseAddress!)
+        let status: OSStatus = data.withUnsafeMutableBytes { bytes in
+            guard let address = bytes.bindMemory(to: UInt8.self).baseAddress else {
+                return errSecParam
+            }
+            return SecRandomCopyBytes(kSecRandomDefault, count, address)
         }
+        guard status == errSecSuccess else { throw BackupError.encryptionFailed }
         return data
     }
 }

@@ -11,6 +11,7 @@ struct ServerHealthWidget: View {
     @State private var hasError = false
     @State private var retryCount = 0
     @State private var isVisible = false
+    @State private var loadRequestID = UUID()
 
     /// Whether to show the section header (title + View All)
     var showHeader: Bool = false
@@ -49,9 +50,7 @@ struct ServerHealthWidget: View {
                     if hasError {
                         retryCount = 0
                         hasError = false
-                        Task {
-                            await loadData()
-                        }
+                        loadRequestID = UUID()
                     } else {
                         onTap?()
                     }
@@ -60,7 +59,7 @@ struct ServerHealthWidget: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .task {
+            .task(id: loadRequestID) {
                 await loadData()
             }
             .task(id: isVisible) {
@@ -77,7 +76,9 @@ struct ServerHealthWidget: View {
                 isVisible = true
                 // If we had an error, retry on appear
                 if hasError {
-                    Task { await loadData() }
+                    retryCount = 0
+                    hasError = false
+                    loadRequestID = UUID()
                 }
             }
             .onDisappear {
@@ -189,31 +190,37 @@ struct ServerHealthWidget: View {
     private func loadData() async {
         isLoading = true
 
-        do {
-            let data = try await UnraidService.shared.fetchAllData()
-            await MainActor.run {
-                self.systemInfo = data.system
-                self.array = data.array
-                self.runningContainers = data.containers.filter { $0.state.isRunning }.count
-                self.totalContainers = data.containers.count
-                self.isLoading = false
-                self.hasError = false
-                self.retryCount = 0  // Reset retry count on success
-            }
-        } catch {
-            await MainActor.run {
-                self.isLoading = false
+        while !Task.isCancelled {
+            do {
+                let data = try await UnraidService.shared.fetchAllData()
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.systemInfo = data.system
+                    self.array = data.array
+                    self.runningContainers = data.containers.filter { $0.state.isRunning }.count
+                    self.totalContainers = data.containers.count
+                    self.isLoading = false
+                    self.hasError = false
+                    self.retryCount = 0
+                }
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
 
-                // Retry with exponential backoff
-                if self.retryCount < self.maxRetries {
-                    self.retryCount += 1
-                    Task {
-                        let delay = UInt64(self.retryCount) * self.retryDelaySeconds * 1_000_000_000
-                        try? await Task.sleep(nanoseconds: delay)
-                        await self.loadData()
+                if retryCount >= maxRetries {
+                    await MainActor.run {
+                        self.isLoading = false
+                        self.hasError = true
                     }
-                } else {
-                    self.hasError = true
+                    return
+                }
+
+                retryCount += 1
+                let delay = retryCount * Int(retryDelaySeconds)
+                do {
+                    try await Task.sleep(for: .seconds(delay))
+                } catch {
+                    return
                 }
             }
         }

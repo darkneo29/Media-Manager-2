@@ -15,6 +15,7 @@ enum DeepLinkDestination: Equatable {
     case tvShow(id: Int)
     case calendar
     case downloads
+    case settings
 }
 
 /// Handles deep link parsing and navigation state
@@ -26,11 +27,23 @@ final class DeepLinkHandler {
     /// The pending destination to navigate to
     var pendingDestination: DeepLinkDestination?
 
+    /// A backup document waiting for the Settings restore flow to consume it.
+    var pendingBackupURL: URL?
+
     private init() {}
 
     /// Parse a deep link URL and set the pending destination
     /// - Parameter url: The URL to parse (e.g., mediamanager://movie/123)
     func handle(url: URL) {
+        if url.isFileURL {
+            let supportedExtensions = [BackupService.fileExtension, "json"]
+            guard supportedExtensions.contains(url.pathExtension.lowercased()) else { return }
+
+            pendingBackupURL = url
+            pendingDestination = .settings
+            return
+        }
+
         guard url.scheme == "mediamanager" else { return }
 
         let host = url.host ?? ""
@@ -49,6 +62,8 @@ final class DeepLinkHandler {
             pendingDestination = .calendar
         case "downloads":
             pendingDestination = .downloads
+        case "settings":
+            pendingDestination = .settings
         default:
             break
         }
@@ -57,5 +72,9 @@ final class DeepLinkHandler {
     /// Clear the pending destination after navigation is complete
     func clearPendingDestination() {
         pendingDestination = nil
+    }
+
+    func clearPendingBackupURL() {
+        pendingBackupURL = nil
     }
 }

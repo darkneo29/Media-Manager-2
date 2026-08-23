@@ -19,7 +19,11 @@ struct TMDBSettingsView: View {
         }
         .navigationTitle("TMDB Settings")
         .onAppear(perform: loadSettings)
-        .onDisappear(perform: saveSettingsSilently)
+        .onChange(of: editingAccessToken) { _, _ in invalidateConnectionTest() }
+        .onDisappear {
+            testAttemptId = UUID()
+            saveSettingsSilently()
+        }
         #if !os(tvOS)
         .navBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
@@ -230,21 +234,35 @@ struct TMDBSettingsView: View {
         try? configuration.saveTMDBToken(editingAccessToken)
     }
 
+    private func invalidateConnectionTest() {
+        testAttemptId = UUID()
+        connectionStatus = .idle
+    }
+
     private func testConnection() {
         connectionStatus = .testing
         let currentAttempt = UUID()
         testAttemptId = currentAttempt
+        let testedAccessToken = editingAccessToken
 
         Task {
             do {
-                try await TMDBService.shared.testConnection(token: editingAccessToken)
+                try await TMDBService.shared.testConnection(token: testedAccessToken)
                 await MainActor.run {
-                    saveSettingsSilently()
-                    connectionStatus = .success
+                    guard testAttemptId == currentAttempt,
+                          editingAccessToken == testedAccessToken else { return }
+                    do {
+                        try configuration.saveTMDBToken(testedAccessToken)
+                        connectionStatus = .success
+                    } catch {
+                        connectionStatus = .failure("Connected, but settings could not be saved: \(error.localizedDescription)")
+                    }
                     resetStatusAfterDelay(attemptId: currentAttempt)
                 }
             } catch {
                 await MainActor.run {
+                    guard testAttemptId == currentAttempt,
+                          editingAccessToken == testedAccessToken else { return }
                     connectionStatus = .failure("Could not connect to TMDB")
                     resetStatusAfterDelay(attemptId: currentAttempt)
                 }

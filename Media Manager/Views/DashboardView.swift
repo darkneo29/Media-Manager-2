@@ -79,13 +79,7 @@ struct DashboardView: View {
             ZStack {
                 ColorPalette.backgroundDark.ignoresSafeArea()
 
-                if !isTMDBConfigured {
-                    PlaceholderView(
-                        icon: "gear",
-                        title: "TMDB Not Configured",
-                        description: "Go to Settings to configure your TMDB API token for trending content"
-                    )
-                } else if shouldShowLoading {
+                if shouldShowLoading {
                     VStack(spacing: AppSpacing.md) {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.primary))
@@ -123,6 +117,11 @@ struct DashboardView: View {
                                     navigationPath.append("server")
                                 })
                                 .padding(.horizontal, TVSizing.contentPadding)
+
+                                if !isTMDBConfigured {
+                                    tmdbConfigurationNotice
+                                        .padding(.horizontal, TVSizing.contentPadding)
+                                }
 
                                 if shouldShowReleaseRadarSection {
                                     releaseRadarSection
@@ -180,6 +179,11 @@ struct DashboardView: View {
                                 navigationPath.append("server")
                             })
                             .padding(.horizontal, AppSpacing.md)
+
+                            if !isTMDBConfigured {
+                                tmdbConfigurationNotice
+                                    .padding(.horizontal, AppSpacing.md)
+                            }
 
                             if shouldShowReleaseRadarSection {
                                 releaseRadarSection
@@ -250,11 +254,14 @@ struct DashboardView: View {
                 }
             }
         }
-        .task {
-            // Only load data once on initial app launch
-            if isTMDBConfigured && !hasLoadedInitialData {
+        .task(id: isTMDBConfigured) {
+            // Library and server content do not depend on TMDB. Reload this task
+            // when TMDB is configured so trending content appears immediately.
+            if !hasLoadedInitialData {
                 await loadData()
                 hasLoadedInitialData = true
+            } else if isTMDBConfigured && trendingMovies.isEmpty && trendingTVShows.isEmpty {
+                await loadTrendingData()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -287,6 +294,27 @@ struct DashboardView: View {
     }
 
     // MARK: - Library Lookup (Using Shared State)
+
+    private var tmdbConfigurationNotice: some View {
+        HStack(spacing: AppSpacing.sm) {
+            Image(systemName: "sparkles")
+                .foregroundColor(ColorPalette.secondary)
+
+            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                Text("Trending content is unavailable")
+                    .font(AppTypography.subheadline(.semibold))
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+                Text("Configure TMDB in Settings. Your library and server data remain available here.")
+                    .font(AppTypography.caption1())
+                    .foregroundColor(ColorPalette.textSecondaryDark)
+            }
+
+            Spacer()
+        }
+        .padding(AppSpacing.md)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.lg)
+    }
 
     /// Check if a trending movie is already in the library
     private func isMovieInLibrary(_ movie: TrendingMovie) -> Bool {
@@ -812,8 +840,10 @@ struct DashboardView: View {
 
         // Fetch new data in background (doesn't block UI if we have cached data)
         await withTaskGroup(of: Void.self) { group in
-            // Load trending from TMDB (uses cache unless forceRefresh)
-            group.addTask { await loadTrendingData(forceRefresh: forceRefresh) }
+            // Trending is optional; library and server content still load without TMDB.
+            if isTMDBConfigured {
+                group.addTask { await loadTrendingData(forceRefresh: forceRefresh) }
+            }
             // Load library from shared state (uses cache unless forceRefresh)
             group.addTask { await libraryState.loadAll(forceRefresh: forceRefresh) }
         }

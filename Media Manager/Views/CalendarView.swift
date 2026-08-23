@@ -463,10 +463,12 @@ struct CalendarView: View {
     private func loadEpisodeCalendar() async {
         guard ConfigurationManager.shared.isSonarrConfigured,
               let month = calendar.dateInterval(of: .month, for: displayedMonth) else { return }
+        let requestedMonth = displayedMonth
         let start = calendar.date(byAdding: .day, value: -7, to: month.start) ?? month.start
         let end = calendar.date(byAdding: .day, value: 7, to: month.end) ?? month.end
         do {
             let episodes = try await SonarrService.shared.fetchCalendar(start: start, end: end)
+            guard !Task.isCancelled, requestedMonth == displayedMonth else { return }
             await MainActor.run {
                 calendarEpisodes = episodes
                 hasLoadedEpisodeCalendar = true
@@ -474,6 +476,7 @@ struct CalendarView: View {
                 rebuildEventCacheIfNeeded()
             }
         } catch {
+            guard !Task.isCancelled, requestedMonth == displayedMonth else { return }
             // Keep the next-airing fallback when the calendar endpoint is unavailable.
             await MainActor.run {
                 hasLoadedEpisodeCalendar = false
@@ -683,6 +686,7 @@ struct CalendarView: View {
         defer { isRefreshing = false }
 
         await libraryState.loadAll(forceRefresh: true)
+        await loadEpisodeCalendar()
 
         // Update widget data with fresh library data
         syncWidgetData()

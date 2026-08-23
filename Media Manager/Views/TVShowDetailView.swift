@@ -680,10 +680,11 @@ struct TVShowDetailView: View {
             )
         }
         .task {
-            loadEpisodeFiles()
-            loadEpisodes()
-            loadTrailer()
-            loadTags()
+            async let files: Void = loadEpisodeFiles()
+            async let loadedEpisodes: Void = loadEpisodes()
+            async let trailer: Void = loadTrailer()
+            async let loadedTags: Void = loadTags()
+            _ = await (files, loadedEpisodes, trailer, loadedTags)
         }
         .toast(
             isShowing: $showSearchToast,
@@ -716,44 +717,42 @@ struct TVShowDetailView: View {
         }
     }
 
-    private func loadTrailer() {
+    private func loadTrailer() async {
         guard let tvdbId = show.tvdbId else { return }
         isLoadingTrailer = true
-        Task {
-            let url = await TMDBService.shared.getTVShowTrailerURL(tvdbId: tvdbId)
-            await MainActor.run {
-                trailerURL = url
-                isLoadingTrailer = false
-            }
+        let url = await TMDBService.shared.getTVShowTrailerURL(tvdbId: tvdbId)
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            trailerURL = url
+            isLoadingTrailer = false
         }
     }
 
-    private func loadTags() {
+    private func loadTags() async {
         guard !(show.tags ?? []).isEmpty else { return }
-        Task {
-            let fetchedTags = (try? await SonarrService.shared.fetchTags()) ?? []
-            await MainActor.run {
-                tags = fetchedTags
-            }
+        let fetchedTags = (try? await SonarrService.shared.fetchTags()) ?? []
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            tags = fetchedTags
         }
     }
 
     // MARK: - Episode Management
 
-    private func loadEpisodes() {
+    private func loadEpisodes() async {
         isLoadingEpisodes = true
-        Task {
-            do {
-                let eps = try await SonarrService.shared.fetchEpisodes(seriesId: show.id)
-                await MainActor.run {
-                    episodes = eps
-                    isLoadingEpisodes = false
-                }
-            } catch {
-                await MainActor.run {
-                    actionErrorMessage = "Could not load episodes: \(error.localizedDescription)"
-                    isLoadingEpisodes = false
-                }
+        do {
+            let eps = try await SonarrService.shared.fetchEpisodes(seriesId: show.id)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                episodes = eps
+                isLoadingEpisodes = false
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                actionErrorMessage = "Could not load episodes: \(error.localizedDescription)"
+                isLoadingEpisodes = false
             }
         }
     }
@@ -878,23 +877,23 @@ struct TVShowDetailView: View {
 
     // MARK: - File Management
 
-    private func loadEpisodeFiles() {
+    private func loadEpisodeFiles() async {
         isLoadingFiles = true
-        Task {
-            do {
-                let files = try await SonarrService.shared.fetchEpisodeFiles(seriesId: show.id)
-                await MainActor.run {
-                    episodeFiles = files
-                    isLoadingFiles = false
-                }
-            } catch {
-                #if DEBUG
-                print("Error loading episode files: \(error)")
-                #endif
-                await MainActor.run {
-                    actionErrorMessage = "Could not load episode files: \(error.localizedDescription)"
-                    isLoadingFiles = false
-                }
+        do {
+            let files = try await SonarrService.shared.fetchEpisodeFiles(seriesId: show.id)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                episodeFiles = files
+                isLoadingFiles = false
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            print("Error loading episode files: \(error)")
+            #endif
+            await MainActor.run {
+                actionErrorMessage = "Could not load episode files: \(error.localizedDescription)"
+                isLoadingFiles = false
             }
         }
     }

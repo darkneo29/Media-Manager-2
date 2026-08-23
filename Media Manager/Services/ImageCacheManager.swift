@@ -19,7 +19,12 @@ actor ImageCacheManager {
 
     // MARK: - Request Deduplication
 
-    private var inFlightRequests: [String: Task<UIImage?, Error>] = [:]
+    private struct InFlightRequest {
+        let id: UUID
+        let task: Task<UIImage?, Error>
+    }
+
+    private var inFlightRequests: [String: InFlightRequest] = [:]
 
     // MARK: - Configuration Cache
 
@@ -134,18 +139,21 @@ actor ImageCacheManager {
         }
 
         // 3. Check for in-flight request (atomic check-and-set within actor)
-        if let existingTask = inFlightRequests[key] {
-            return try? await existingTask.value
+        if let existingRequest = inFlightRequests[key] {
+            return try? await existingRequest.task.value
         }
 
         // 4. Create new fetch task and register atomically
+        let requestID = UUID()
         let task = Task<UIImage?, Error> {
             try await fetchImage(from: url, key: key)
         }
-        inFlightRequests[key] = task
+        inFlightRequests[key] = InFlightRequest(id: requestID, task: task)
 
         let result = try? await task.value
-        inFlightRequests.removeValue(forKey: key)
+        if inFlightRequests[key]?.id == requestID {
+            inFlightRequests.removeValue(forKey: key)
+        }
         return result
     }
 
@@ -174,6 +182,8 @@ actor ImageCacheManager {
             return nil
         }
 
+        try Task.checkCancellation()
+
         // Cache the image
         setInMemory(key: key, image: image)
         saveToDisk(key: key, data: data)
@@ -196,8 +206,11 @@ actor ImageCacheManager {
             return false
         }
 
-        let serverPath = server.path
-        return serverPath.isEmpty || serverPath == "/" || url.path.hasPrefix(serverPath)
+        let serverPath = server.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard !serverPath.isEmpty else { return true }
+
+        let candidatePath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return candidatePath == serverPath || candidatePath.hasPrefix(serverPath + "/")
     }
 
     /// Prefetch images for a list of URLs (useful for scroll views)
@@ -213,6 +226,8 @@ actor ImageCacheManager {
 
     /// Clear all cached images
     func clearAll() {
+        inFlightRequests.values.forEach { $0.task.cancel() }
+        inFlightRequests.removeAll()
         memoryCache.removeAllObjects()
         try? fileManager.removeItem(at: cacheDirectory)
         try? fileManager.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)

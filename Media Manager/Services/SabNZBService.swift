@@ -40,7 +40,7 @@ class SabNZBService {
 
     /// Builds a SabNZB API URL with mode, output=json, and the required API key query item.
     private func sabURL(base: String? = nil, apiKey: String? = nil, mode: String, extraParams: [(String, String)] = []) -> URL? {
-        let apiBase = base ?? baseURL
+        let apiBase = ConfigurationManager.normalizedServerURL(base ?? baseURL)
         var components = URLComponents(string: "\(apiBase)/api")
         var queryItems = [URLQueryItem(name: "mode", value: mode), URLQueryItem(name: "output", value: "json")]
         let resolvedAPIKey = apiKey ?? self.apiKey

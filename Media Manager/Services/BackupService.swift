@@ -121,6 +121,17 @@ class BackupService {
             secrets = backup.legacyPlaintextSecrets
         }
 
+        // Keychain writes can fail. Apply them before nonthrowing defaults writes
+        // and restore the previous snapshot on a partial failure so a throwing
+        // restore does not leave a mixed credential set behind.
+        let previousSecrets = credentialStore.snapshot()
+        do {
+            try applyCredentials(secrets)
+        } catch {
+            try? applyCredentials(previousSecrets)
+            throw error
+        }
+
         defaults.set(ConfigurationManager.normalizedServerURL(backup.radarr.url), forKey: "radarrURL")
         defaults.set(ConfigurationManager.normalizedServerURL(backup.sonarr.url), forKey: "sonarrURL")
         defaults.set(ConfigurationManager.normalizedServerURL(backup.sabnzb.url), forKey: "sabnzbURL")
@@ -135,15 +146,17 @@ class BackupService {
             defaults.set("celsius", forKey: "unraidTemperatureUnit")
         }
 
-        try credentialStore.set(secrets.radarrAPIKey ?? "", for: .radarrAPIKey)
-        try credentialStore.set(secrets.sonarrAPIKey ?? "", for: .sonarrAPIKey)
-        try credentialStore.set(secrets.sabnzbAPIKey ?? "", for: .sabnzbAPIKey)
-        try credentialStore.set(secrets.tmdbAccessToken ?? "", for: .tmdbAccessToken)
-        try credentialStore.set(secrets.unraidAPIKey ?? "", for: .unraidAPIKey)
-
         Task { @MainActor in
             ConfigurationManager.shared.refreshConfiguration(invalidateCaches: true)
         }
+    }
+
+    private func applyCredentials(_ credentials: StoredCredentials) throws {
+        try credentialStore.set(credentials.radarrAPIKey ?? "", for: .radarrAPIKey)
+        try credentialStore.set(credentials.sonarrAPIKey ?? "", for: .sonarrAPIKey)
+        try credentialStore.set(credentials.sabnzbAPIKey ?? "", for: .sabnzbAPIKey)
+        try credentialStore.set(credentials.tmdbAccessToken ?? "", for: .tmdbAccessToken)
+        try credentialStore.set(credentials.unraidAPIKey ?? "", for: .unraidAPIKey)
     }
 
     func backupRequiresPassphrase(_ backup: SettingsBackup) -> Bool {

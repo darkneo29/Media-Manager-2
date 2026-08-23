@@ -230,7 +230,7 @@ final class WatchSnapshotService: NSObject {
                 }
 
                 return WatchUpcomingItem(
-                    id: event.id.uuidString,
+                    id: event.stableIdentifier,
                     title: event.title,
                     date: event.date,
                     kind: kind,

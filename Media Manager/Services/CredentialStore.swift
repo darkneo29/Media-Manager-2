@@ -123,25 +123,38 @@ final class CredentialStore {
         cloudStore: KeyValueStoring? = NSUbiquitousKeyValueStore.default
     ) {
         let storedMigrationVersion = defaults.integer(forKey: migrationVersionKey)
+        var allMigrationsSucceeded = true
 
         for key in CredentialKey.allCases {
+            let localValue = normalizedSecret(defaults.string(forKey: key.rawValue) ?? "")
+            let cloudValue = normalizedSecret(cloudStore?.object(forKey: key.rawValue) as? String ?? "")
+
             if string(for: key).isEmpty {
-                let localValue = normalizedSecret(defaults.string(forKey: key.rawValue) ?? "")
-                let cloudValue = normalizedSecret(cloudStore?.object(forKey: key.rawValue) as? String ?? "")
                 if let migratedValue = localValue ?? cloudValue {
-                    try? set(migratedValue, for: key)
+                    do {
+                        try set(migratedValue, for: key)
+                    } catch {
+                        // Keep both legacy sources intact so a transient Keychain
+                        // failure cannot destroy the only copy of a credential.
+                        allMigrationsSucceeded = false
+                        continue
+                    }
                 }
             }
 
-            defaults.removeObject(forKey: key.rawValue)
-            cloudStore?.removeObject(forKey: key.rawValue)
+            if !string(for: key).isEmpty || (localValue == nil && cloudValue == nil) {
+                defaults.removeObject(forKey: key.rawValue)
+                cloudStore?.removeObject(forKey: key.rawValue)
+            } else {
+                allMigrationsSucceeded = false
+            }
         }
 
         if let cloudStore = cloudStore as? NSUbiquitousKeyValueStore {
             cloudStore.synchronize()
         }
 
-        if storedMigrationVersion < migrationVersion {
+        if allMigrationsSucceeded, storedMigrationVersion < migrationVersion {
             defaults.set(migrationVersion, forKey: migrationVersionKey)
         }
     }

@@ -122,6 +122,8 @@ struct MainTabView: View {
             selectedTab = 5
         case .downloads:
             selectedTab = 4
+        case .settings:
+            selectedTab = 7
         }
 
         // Clear the pending destination after handling

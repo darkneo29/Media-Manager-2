@@ -519,9 +519,10 @@ struct MovieDetailView: View {
             )
         }
         .task {
-            loadMovieFiles()
-            loadTrailer()
-            loadTags()
+            async let files: Void = loadMovieFiles()
+            async let trailer: Void = loadTrailer()
+            async let loadedTags: Void = loadTags()
+            _ = await (files, trailer, loadedTags)
         }
         .toast(
             isShowing: $showSearchToast,
@@ -554,47 +555,45 @@ struct MovieDetailView: View {
         }
     }
 
-    private func loadTrailer() {
+    private func loadTrailer() async {
         guard let tmdbId = movie.tmdbId else { return }
         isLoadingTrailer = true
-        Task {
-            let url = await TMDBService.shared.getMovieTrailerURL(tmdbId: tmdbId)
-            await MainActor.run {
-                trailerURL = url
-                isLoadingTrailer = false
-            }
+        let url = await TMDBService.shared.getMovieTrailerURL(tmdbId: tmdbId)
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            trailerURL = url
+            isLoadingTrailer = false
         }
     }
 
-    private func loadTags() {
+    private func loadTags() async {
         guard !(movie.tags ?? []).isEmpty else { return }
-        Task {
-            let fetchedTags = (try? await RadarrService.shared.fetchTags()) ?? []
-            await MainActor.run {
-                tags = fetchedTags
-            }
+        let fetchedTags = (try? await RadarrService.shared.fetchTags()) ?? []
+        guard !Task.isCancelled else { return }
+        await MainActor.run {
+            tags = fetchedTags
         }
     }
 
     // MARK: - File Management
 
-    private func loadMovieFiles() {
+    private func loadMovieFiles() async {
         isLoadingFiles = true
-        Task {
-            do {
-                let files = try await RadarrService.shared.fetchMovieFiles(movieId: movie.id)
-                await MainActor.run {
-                    movieFiles = files
-                    isLoadingFiles = false
-                }
-            } catch {
-                #if DEBUG
-                print("Error loading movie files: \(error)")
-                #endif
-                await MainActor.run {
-                    actionErrorMessage = "Could not load movie files: \(error.localizedDescription)"
-                    isLoadingFiles = false
-                }
+        do {
+            let files = try await RadarrService.shared.fetchMovieFiles(movieId: movie.id)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                movieFiles = files
+                isLoadingFiles = false
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            #if DEBUG
+            print("Error loading movie files: \(error)")
+            #endif
+            await MainActor.run {
+                actionErrorMessage = "Could not load movie files: \(error.localizedDescription)"
+                isLoadingFiles = false
             }
         }
     }

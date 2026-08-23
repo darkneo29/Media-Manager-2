@@ -410,7 +410,8 @@ class RadarrService {
 
     /// Tests the connection to the Radarr server using the provided URL and API key
     func testConnection(url: String, apiKey: String) async throws {
-        guard let testURL = URL(string: "\(url)/api/v3/system/status") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let testURL = URL(string: "\(normalizedURL)/api/v3/system/status") else {
             throw URLError(.badURL)
         }
 
@@ -573,7 +574,8 @@ class RadarrService {
 
     /// Fetches logs using specific URL and API key (for settings view)
     func fetchLogs(url: String, apiKey: String, count: Int = 10) async throws -> [LogEntry] {
-        guard let logURL = URL(string: "\(url)/api/v3/log?pageSize=\(count)&sortKey=time&sortDirection=descending") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let logURL = URL(string: "\(normalizedURL)/api/v3/log?pageSize=\(count)&sortKey=time&sortDirection=descending") else {
             throw URLError(.badURL)
         }
 
@@ -857,7 +859,8 @@ class RadarrService {
 
     /// Fetches all backups from the Radarr server
     func fetchBackups(url: String, apiKey: String) async throws -> [ServerBackup] {
-        guard let backupURL = URL(string: "\(url)/api/v3/system/backup") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let backupURL = URL(string: "\(normalizedURL)/api/v3/system/backup") else {
             throw URLError(.badURL)
         }
 
@@ -875,7 +878,8 @@ class RadarrService {
 
     /// Restores a backup on the Radarr server (triggers restart)
     func restoreBackup(url: String, apiKey: String, backupId: Int) async throws {
-        guard let restoreURL = URL(string: "\(url)/api/v3/system/backup/restore/\(backupId)") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let restoreURL = URL(string: "\(normalizedURL)/api/v3/system/backup/restore/\(backupId)") else {
             throw URLError(.badURL)
         }
 

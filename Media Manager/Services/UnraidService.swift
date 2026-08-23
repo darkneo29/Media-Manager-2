@@ -32,7 +32,13 @@ class UnraidService {
     private actor CacheManager {
         private var cachedData: (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain])?
         private var cacheTimestamp: Date?
-        private var inFlightTask: Task<(system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]), Error>?
+        private struct InFlightRequest {
+            let generation: UInt64
+            let task: Task<UnraidAllData, Error>
+        }
+
+        private var inFlightRequest: InFlightRequest?
+        private var generation: UInt64 = 0
 
         private let cacheValiditySeconds: TimeInterval = 5  // Cache valid for 5 seconds
 
@@ -53,26 +59,44 @@ class UnraidService {
         typealias UnraidAllData = (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain])
 
         func getOrCreateFetchTask(factory: @Sendable @escaping () async throws -> UnraidAllData) -> Task<UnraidAllData, Error> {
-            if let existing = inFlightTask {
-                return existing
+            if let existing = inFlightRequest {
+                return existing.task
             }
+
+            generation &+= 1
+            let requestGeneration = generation
             let task = Task<UnraidAllData, Error> {
-                defer {
-                    Task { self.clearInFlightTask() }
+                do {
+                    let result = try await factory()
+                    try Task.checkCancellation()
+                    self.completeFetch(result, generation: requestGeneration)
+                    return result
+                } catch {
+                    self.completeFailedFetch(generation: requestGeneration)
+                    throw error
                 }
-                let result = try await factory()
-                self.setCachedData(result)
-                return result
             }
-            inFlightTask = task
+            inFlightRequest = InFlightRequest(generation: requestGeneration, task: task)
             return task
         }
 
-        func clearInFlightTask() {
-            inFlightTask = nil
+        private func completeFetch(_ data: UnraidAllData, generation requestGeneration: UInt64) {
+            guard generation == requestGeneration,
+                  inFlightRequest?.generation == requestGeneration else { return }
+            setCachedData(data)
+            inFlightRequest = nil
+        }
+
+        private func completeFailedFetch(generation requestGeneration: UInt64) {
+            guard generation == requestGeneration,
+                  inFlightRequest?.generation == requestGeneration else { return }
+            inFlightRequest = nil
         }
 
         func invalidateCache() {
+            generation &+= 1
+            inFlightRequest?.task.cancel()
+            inFlightRequest = nil
             cachedData = nil
             cacheTimestamp = nil
         }
@@ -171,6 +195,7 @@ class UnraidService {
             array {
                 state
                 capacity {
+                    kilobytes { total used free }
                     disks { total used free }
                 }
                 disks {
@@ -308,6 +333,7 @@ class UnraidService {
             array {
                 state
                 capacity {
+                    kilobytes { total used free }
                     disks { total used free }
                 }
                 disks {
@@ -449,6 +475,7 @@ class UnraidService {
             array {
                 state
                 capacity {
+                    kilobytes { total used free }
                     disks { total used free }
                 }
                 disks {
@@ -744,7 +771,17 @@ class UnraidService {
         let body: [String: Any] = ["query": query]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw UnraidError.invalidResponse
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                throw UnraidError.unauthorized
+            }
+            throw UnraidError.httpError(httpResponse.statusCode)
+        }
 
         if let jsonString = String(data: data, encoding: .utf8) {
             return jsonString
@@ -872,7 +909,6 @@ class UnraidService {
                 print("Unraid API Error (\(httpResponse.statusCode)): \(responseBody)")
             }
             print("Request URL: \(url)")
-            print("Request Headers: \(request.allHTTPHeaderFields ?? [:])")
         }
         #endif
 
@@ -941,18 +977,18 @@ class UnraidService {
     private func parseArray(from data: ArrayData) -> UnraidArray {
         // Helper to parse a single disk
         func parseDisk(_ disk: DiskData) -> UnraidDisk {
-            let diskSizeKB = Int64(disk.size.intValue)
+            let diskSizeKB = max(0, Int64(disk.size.intValue))
             let diskSizeBytes = diskSizeKB * 1000  // KB to bytes (SI units)
 
             // fsUsed is in KB
-            let usedBytes = Int64(disk.fsUsed?.intValue ?? 0) * 1000
+            let usedBytes = max(0, Int64(disk.fsUsed?.intValue ?? 0)) * 1000
 
             return UnraidDisk(
                 id: disk.id ?? disk.name,
                 name: disk.name,
                 size: diskSizeBytes,
                 used: usedBytes,
-                status: DiskStatus(rawValue: disk.status) ?? .unknown,
+                status: DiskStatus(apiValue: disk.status),
                 temperature: disk.temp,
                 type: parseDiskType(disk.type ?? disk.name),
                 device: disk.device,
@@ -988,19 +1024,22 @@ class UnraidService {
         // Sum up used from individual data disks for accurate capacity
         let totalUsedBytes = dataDisks.reduce(Int64(0)) { $0 + $1.used }
 
-        // Use API capacity values as fallback (they're in TB)
-        let apiUsed = Double(data.capacity.disks.used) ?? 0
-        let tbToBytes: Double = 1_000_000_000_000
+        // The API's authoritative storage capacity is expressed in kilobytes.
+        // `capacity.disks` is a disk *count* and must never be treated as bytes.
+        let apiTotalBytes = bytesFromKilobyteString(data.capacity.kilobytes?.total)
+        let apiUsedBytes = bytesFromKilobyteString(data.capacity.kilobytes?.used)
+        let apiFreeBytes = bytesFromKilobyteString(data.capacity.kilobytes?.free)
 
-        // Prefer disk-level data if available, otherwise use API capacity
-        let usedBytes = totalUsedBytes > 0 ? totalUsedBytes : Int64(apiUsed * tbToBytes)
+        let resolvedTotalBytes = apiTotalBytes ?? totalBytes
+        let resolvedUsedBytes = apiUsedBytes ?? totalUsedBytes
+        let resolvedFreeBytes = apiFreeBytes ?? max(0, resolvedTotalBytes - resolvedUsedBytes)
 
         return UnraidArray(
             state: ArrayState(rawValue: data.state) ?? .unknown,
             capacity: ArrayCapacity(
-                total: totalBytes,
-                used: usedBytes,
-                free: totalBytes - usedBytes
+                total: resolvedTotalBytes,
+                used: resolvedUsedBytes,
+                free: resolvedFreeBytes
             ),
             disks: allDisks,
             parity: nil // Would need additional query for parity status
@@ -1120,6 +1159,14 @@ class UnraidService {
         }
 
         return Int64(number * multiplier)
+    }
+
+    private func bytesFromKilobyteString(_ value: String?) -> Int64? {
+        guard let value,
+              let kilobytes = Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              kilobytes >= 0 else { return nil }
+        let (bytes, overflow) = kilobytes.multipliedReportingOverflow(by: 1_000)
+        return overflow ? nil : bytes
     }
 
     private func parseDiskType(_ typeOrName: String) -> DiskType {

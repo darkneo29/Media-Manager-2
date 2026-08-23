@@ -49,7 +49,16 @@ actor CacheManager {
 
     private var cache: [String: Any] = [:]
     private var timestamps: [String: (date: Date, ttl: TimeInterval)] = [:]
-    private var inFlightRequests: [String: Task<Any, Error>] = [:]
+    private struct InFlightRequest {
+        let id: UUID
+        let epoch: UInt64
+        let generation: UInt64
+        let task: Task<Any, Error>
+    }
+
+    private var inFlightRequests: [String: InFlightRequest] = [:]
+    private var requestGenerations: [String: UInt64] = [:]
+    private var epoch: UInt64 = 0
 
     private init() {}
 
@@ -63,6 +72,7 @@ actor CacheManager {
 
         if entry.isExpired {
             cache.removeValue(forKey: key)
+            timestamps.removeValue(forKey: key)
             return nil
         }
 
@@ -78,22 +88,33 @@ actor CacheManager {
 
     /// Remove specific cache entry
     func remove(_ key: String) {
+        invalidateGeneration(for: key)
         cache.removeValue(forKey: key)
         timestamps.removeValue(forKey: key)
+        inFlightRequests.removeValue(forKey: key)?.task.cancel()
     }
 
     /// Clear all cache entries
     func clearAll() {
+        epoch &+= 1
+        requestGenerations.removeAll()
         cache.removeAll()
         timestamps.removeAll()
+        inFlightRequests.values.forEach { $0.task.cancel() }
+        inFlightRequests.removeAll()
     }
 
     /// Clear all entries matching a prefix
     func clearWithPrefix(_ prefix: String) {
-        let keysToRemove = cache.keys.filter { $0.hasPrefix(prefix) }
+        let keysToRemove = Set(cache.keys.filter { $0.hasPrefix(prefix) })
+            .union(timestamps.keys.filter { $0.hasPrefix(prefix) })
+            .union(inFlightRequests.keys.filter { $0.hasPrefix(prefix) })
+            .union(requestGenerations.keys.filter { $0.hasPrefix(prefix) })
         for key in keysToRemove {
+            invalidateGeneration(for: key)
             cache.removeValue(forKey: key)
             timestamps.removeValue(forKey: key)
+            inFlightRequests.removeValue(forKey: key)?.task.cancel()
         }
     }
 
@@ -128,26 +149,41 @@ actor CacheManager {
 
         // Check for in-flight request
         if bypassInFlight {
-            inFlightRequests[key]?.cancel()
+            invalidateGeneration(for: key)
+            inFlightRequests[key]?.task.cancel()
             inFlightRequests.removeValue(forKey: key)
-        } else if let existingTask = inFlightRequests[key] {
-            // Wait for existing request
-            let result = try await existingTask.value
-            if let typedResult = result as? T {
-                return typedResult
-            }
+        } else if let existingRequest = inFlightRequests[key] {
+            return try await resolvedValue(from: existingRequest, for: key)
         }
 
         // Create new request
+        let requestID = UUID()
+        let requestGeneration = nextGeneration(for: key)
+        let requestEpoch = epoch
         let task = Task<Any, Error> {
             let result = try await fetch()
             return result as Any
         }
 
-        inFlightRequests[key] = task
+        let inFlightRequest = InFlightRequest(
+            id: requestID,
+            epoch: requestEpoch,
+            generation: requestGeneration,
+            task: task
+        )
+        inFlightRequests[key] = inFlightRequest
 
         do {
             let result = try await task.value
+
+            // A force refresh or invalidation may have superseded this request
+            // while its fetch ignored/delayed cancellation. Never let an older
+            // request remove or cache over the replacement.
+            guard isCurrent(inFlightRequest, for: key),
+                  inFlightRequests[key]?.id == requestID else {
+                return try await resultFromReplacement(for: key)
+            }
+
             inFlightRequests.removeValue(forKey: key)
 
             if let typedResult = result as? T {
@@ -158,9 +194,59 @@ actor CacheManager {
 
             throw CacheError.typeMismatch
         } catch {
+            guard isCurrent(inFlightRequest, for: key),
+                  inFlightRequests[key]?.id == requestID else {
+                return try await resultFromReplacement(for: key)
+            }
             inFlightRequests.removeValue(forKey: key)
             throw error
         }
+    }
+
+    /// Returns the newest value after a request was superseded. This prevents
+    /// callers awaiting an older request from observing stale data.
+    private func resultFromReplacement<T>(for key: String) async throws -> T {
+        if let cached: T = get(key) {
+            return cached
+        }
+
+        guard let replacement = inFlightRequests[key] else {
+            throw CancellationError()
+        }
+
+        return try await resolvedValue(from: replacement, for: key)
+    }
+
+    private func resolvedValue<T>(from request: InFlightRequest, for key: String) async throws -> T {
+        do {
+            let result = try await request.task.value
+            guard isCurrent(request, for: key) else {
+                return try await resultFromReplacement(for: key)
+            }
+            guard let typedResult = result as? T else {
+                throw CacheError.typeMismatch
+            }
+            return typedResult
+        } catch {
+            guard isCurrent(request, for: key) else {
+                return try await resultFromReplacement(for: key)
+            }
+            throw error
+        }
+    }
+
+    private func nextGeneration(for key: String) -> UInt64 {
+        let next = (requestGenerations[key] ?? 0) &+ 1
+        requestGenerations[key] = next
+        return next
+    }
+
+    private func invalidateGeneration(for key: String) {
+        requestGenerations[key] = (requestGenerations[key] ?? 0) &+ 1
+    }
+
+    private func isCurrent(_ request: InFlightRequest, for key: String) -> Bool {
+        request.epoch == epoch && request.generation == requestGenerations[key]
     }
 
     // MARK: - Cache Keys
@@ -187,8 +273,12 @@ actor CacheManager {
         static func episodes(_ seriesId: Int) -> String { "sonarr.episodes.\(seriesId)" }
 
         // TMDB
-        static let tmdbTrendingMovies = "tmdb.trending.movies"
-        static let tmdbTrendingTVShows = "tmdb.trending.tvshows"
+        static func tmdbTrendingMovies(timeWindow: String) -> String {
+            "tmdb.trending.movies.\(timeWindow.lowercased())"
+        }
+        static func tmdbTrendingTVShows(timeWindow: String) -> String {
+            "tmdb.trending.tvshows.\(timeWindow.lowercased())"
+        }
         static let tmdbPopularMovies = "tmdb.popular.movies"
         static let tmdbTopRatedMovies = "tmdb.toprated.movies"
         static let tmdbNowPlayingMovies = "tmdb.nowplaying.movies"

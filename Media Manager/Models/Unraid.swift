@@ -193,10 +193,29 @@ enum DiskStatus: String, Codable {
     case missing = "DISK_NP"
     case unknown = "UNKNOWN"
 
+    init(apiValue: String) {
+        switch apiValue.uppercased() {
+        case "DISK_OK":
+            self = .healthy
+        case "DISK_WARN", "DISK_NEW":
+            self = .warning
+        case "DISK_ERROR", "DISK_INVALID", "DISK_WRONG":
+            self = .error
+        case "DISK_SPUN_DOWN":
+            self = .spunDown
+        case "DISK_DISABLED", "DISK_DSBL", "DISK_NP_DSBL", "DISK_DSBL_NEW":
+            self = .disabled
+        case "DISK_NP", "DISK_NP_MISSING":
+            self = .missing
+        default:
+            self = .unknown
+        }
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         let rawValue = try container.decode(String.self)
-        self = DiskStatus(rawValue: rawValue) ?? .unknown
+        self = DiskStatus(apiValue: rawValue)
     }
 
     var displayName: String {
@@ -557,7 +576,8 @@ struct ArrayData: Codable {
 }
 
 struct CapacityData: Codable {
-    let disks: DiskCapacity
+    let kilobytes: DiskCapacity?
+    let disks: DiskCapacity?
 }
 
 struct DiskCapacity: Codable {

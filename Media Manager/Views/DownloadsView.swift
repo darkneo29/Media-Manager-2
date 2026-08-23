@@ -207,7 +207,7 @@ struct DownloadsView: View {
             }
             .task(id: isActiveTab) {
                 guard isActiveTab, selectedTab != 0 else { return }
-                await loadSelectedTabData()
+                await loadSelectedTabData(for: selectedTab)
             }
             .task(id: shouldPollActiveDownloads) {
                 guard shouldPollActiveDownloads else { return }
@@ -225,15 +225,16 @@ struct DownloadsView: View {
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active && isActiveTab && selectedTab != 0 {
+                    let tab = selectedTab
                     Task {
-                        await loadSelectedTabData(force: true)
+                        await loadSelectedTabData(for: tab, force: true)
                     }
                 }
             }
             .onChange(of: selectedTab) { _, newValue in
                 if isActiveTab && newValue != 0 {
                     Task {
-                        await loadSelectedTabData(force: loadedTabs.contains(newValue))
+                        await loadSelectedTabData(for: newValue, force: loadedTabs.contains(newValue))
                     }
                 }
             }
@@ -744,13 +745,13 @@ struct DownloadsView: View {
 
     // MARK: - Data Loading
 
-    private func loadSelectedTabData(force: Bool = false) async {
+    private func loadSelectedTabData(for tab: Int, force: Bool = false) async {
         guard isActiveTab else { return }
-        if !force && loadedTabs.contains(selectedTab) {
+        if !force && loadedTabs.contains(tab) {
             return
         }
 
-        switch selectedTab {
+        switch tab {
         case 0:
             await loadData()
         case 1:
@@ -763,7 +764,8 @@ struct DownloadsView: View {
             break
         }
 
-        loadedTabs.insert(selectedTab)
+        guard !Task.isCancelled else { return }
+        loadedTabs.insert(tab)
     }
 
     private func loadData() async {

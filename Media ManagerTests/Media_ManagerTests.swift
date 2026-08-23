@@ -172,6 +172,54 @@ struct Media_ManagerTests {
     }
 
     @Test
+    func encryptedBackupRejectsUnsafePBKDFIterations() throws {
+        let encrypted = EncryptedBackupSecrets(
+            salt: Data(repeating: 1, count: 16),
+            nonce: Data(repeating: 2, count: 12),
+            ciphertext: Data(repeating: 3, count: 32),
+            tag: Data(repeating: 4, count: 16),
+            iterations: -1
+        )
+
+        do {
+            _ = try BackupEncryptionService().decrypt(encrypted, passphrase: "test passphrase")
+            Issue.record("Expected malformed backup to be rejected")
+        } catch let error as BackupError {
+            guard case .invalidBackupFile = error else {
+                Issue.record("Unexpected backup error: \(error.localizedDescription)")
+                return
+            }
+        }
+    }
+
+    @Test
+    func forcedCacheRefreshSupersedesCancellationIgnoringRequest() async throws {
+        let cache = CacheManager.shared
+        let key = "tests.cache.supersede.\(UUID().uuidString)"
+        defer { Task { await cache.remove(key) } }
+
+        let original = Task {
+            try await cache.fetchWithCache(key: key, ttl: 60) {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                return "old"
+            }
+        }
+
+        try await Task.sleep(nanoseconds: 30_000_000)
+        let replacement = Task {
+            try await cache.fetchWithCache(key: key, ttl: 60, bypassInFlight: true) {
+                try await Task.sleep(nanoseconds: 50_000_000)
+                return "new"
+            }
+        }
+
+        #expect(try await replacement.value == "new")
+        #expect(try await original.value == "new")
+        let cached: String? = await cache.get(key)
+        #expect(cached == "new")
+    }
+
+    @Test
     func legacyPlaintextBackupImportsSecretsIntoKeychain() throws {
         let restoreDefaultsStore = makeDefaults(suffix: "legacy-import")
         let restoreCredentials = CredentialStore(serviceName: "tests.credentials.legacy-import.\(UUID().uuidString)")
@@ -243,6 +291,47 @@ struct Media_ManagerTests {
 
         #expect(loadState.image == nil)
         #expect(!loadState.isLoading)
+    }
+
+    @Test
+    func widgetEventIdentityIsStableAcrossCalendarRebuilds() throws {
+        let movie = Movie(
+            id: 42,
+            title: "Example Movie",
+            year: 2026,
+            overview: nil,
+            runtime: 120,
+            monitored: true,
+            status: "released",
+            images: []
+        )
+        let releaseDate = try #require(ISO8601DateFormatter().date(from: "2026-08-23T12:00:00Z"))
+        let first = CalendarEvent(
+            title: movie.title,
+            date: releaseDate,
+            type: .movieRelease(releaseType: .digital),
+            source: .movie(movie),
+            posterURL: nil,
+            year: movie.year
+        )
+        let rebuilt = CalendarEvent(
+            title: movie.title,
+            date: releaseDate,
+            type: .movieRelease(releaseType: .digital),
+            source: .movie(movie),
+            posterURL: nil,
+            year: movie.year
+        )
+
+        #expect(first.id != rebuilt.id)
+        #expect(WidgetEvent.from(calendarEvent: first)?.id == WidgetEvent.from(calendarEvent: rebuilt)?.id)
+    }
+
+    @Test
+    func unraidDiskStatusMapsCurrentAPIValues() {
+        #expect(DiskStatus(apiValue: "DISK_DSBL") == .disabled)
+        #expect(DiskStatus(apiValue: "DISK_NP_MISSING") == .missing)
+        #expect(DiskStatus(apiValue: "DISK_INVALID") == .error)
     }
 
     @Test
@@ -393,6 +482,23 @@ struct Media_ManagerTests {
 
         #expect(lookup.sonarrId == 42)
         #expect(lookup.tvdbId == 121361)
+    }
+
+    @Test @MainActor
+    func backupDocumentURLRoutesToSettingsRestoreFlow() {
+        let handler = DeepLinkHandler.shared
+        handler.clearPendingDestination()
+        handler.clearPendingBackupURL()
+        defer {
+            handler.clearPendingDestination()
+            handler.clearPendingBackupURL()
+        }
+
+        let url = URL(fileURLWithPath: "/tmp/MediaManager_Backup.mediabackup")
+        handler.handle(url: url)
+
+        #expect(handler.pendingDestination == .settings)
+        #expect(handler.pendingBackupURL == url)
     }
 
     private func makeDefaults(suffix: String) -> TestDefaultsStore {

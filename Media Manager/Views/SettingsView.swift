@@ -45,6 +45,7 @@ private enum BackupPassphraseMode {
 #endif
 
 struct SettingsView: View {
+    @Environment(DeepLinkHandler.self) private var deepLinkHandler
     @State private var navigationPath = NavigationPath()
     #if !os(tvOS)
     @State private var showingExporter = false
@@ -83,6 +84,11 @@ struct SettingsView: View {
                     }
             }
             #if !os(tvOS)
+            .task(id: deepLinkHandler.pendingBackupURL) {
+                guard let url = deepLinkHandler.pendingBackupURL else { return }
+                deepLinkHandler.clearPendingBackupURL()
+                await prepareImport(from: url)
+            }
             .fileExporter(
                 isPresented: $showingExporter,
                 document: backupDocument,
@@ -596,10 +602,12 @@ struct SettingsView: View {
     @MainActor
     private func prepareImport(from url: URL) async {
         do {
-            guard url.startAccessingSecurityScopedResource() else {
-                throw BackupError.decodingFailed
+            let accessedSecurityScopedResource = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessedSecurityScopedResource {
+                    url.stopAccessingSecurityScopedResource()
+                }
             }
-            defer { url.stopAccessingSecurityScopedResource() }
 
             let data = try await Task.detached(priority: .userInitiated) {
                 try Data(contentsOf: url)
@@ -1055,4 +1063,5 @@ struct SettingsRow: View {
 #Preview {
     SettingsView()
         .preferredColorScheme(.dark)
+        .environment(DeepLinkHandler.shared)
 }

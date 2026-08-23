@@ -55,6 +55,11 @@ final class iCloudSyncService {
     /// Flag to prevent sync loops during push operations
     private var isPushingToCloud = false
 
+    /// Last observed values for the keys this service actually owns. UserDefaults
+    /// notifications do not identify a changed key, so this prevents unrelated
+    /// preferences (and our own timestamp writes) from winning sync conflicts.
+    private var lastLocalSyncableSnapshot: [String: SyncableValue] = [:]
+
     /// Keys that should be synced
     private let syncableKeys: [String] = [
         "radarrURL",
@@ -98,11 +103,18 @@ final class iCloudSyncService {
         case noData
     }
 
+    private enum SyncableValue: Equatable {
+        case string(String)
+        case number(String)
+        case other(String)
+    }
+
     // MARK: - Initialization
 
     private init() {
         // Load initial state from UserDefaults
         isEnabled = localDefaults.bool(forKey: LocalKeys.iCloudSyncEnabled)
+        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
 
         if isEnabled {
             let timestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
@@ -263,6 +275,8 @@ final class iCloudSyncService {
     // MARK: - Sync Operations
 
     private func startSync() {
+        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
+
         // Register for remote change notifications (closure-based, guaranteed main queue)
         remoteChangeObserver = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -312,6 +326,9 @@ final class iCloudSyncService {
         for key in syncableKeys {
             if let value = localDefaults.object(forKey: key) {
                 ubiquitousStore.set(value, forKey: key)
+            } else {
+                // Propagate local deletions instead of leaving stale cloud values.
+                ubiquitousStore.removeObject(forKey: key)
             }
         }
 
@@ -319,6 +336,7 @@ final class iCloudSyncService {
         ubiquitousStore.set(Int64(3), forKey: CloudKeys.settingsVersion)
 
         localDefaults.set(timestamp, forKey: LocalKeys.lastLocalChangeTimestamp)
+        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
         purgeCloudSecrets()
 
         #if DEBUG
@@ -333,6 +351,10 @@ final class iCloudSyncService {
         for key in syncableKeys {
             if let value = ubiquitousStore.object(forKey: key) {
                 localDefaults.set(value, forKey: key)
+            } else {
+                // A missing cloud key represents a deletion and must clear a
+                // previously configured local endpoint/preference.
+                localDefaults.removeObject(forKey: key)
             }
         }
         purgeCloudSecrets()
@@ -344,7 +366,12 @@ final class iCloudSyncService {
         let cloudTimestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
         localDefaults.set(cloudTimestamp, forKey: LocalKeys.lastLocalChangeTimestamp)
 
+        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
         isUpdatingFromCloud = false
+
+        // Server endpoints may have changed. Drop data/image caches tied to the
+        // previous server before subsequent views fetch through the new config.
+        ConfigurationManager.shared.refreshConfiguration(invalidateCaches: true)
 
         #if DEBUG
         print("[iCloudSync] Pulled settings from iCloud to local")
@@ -355,6 +382,10 @@ final class iCloudSyncService {
 
     private func handleLocalChange(_ notification: Notification) {
         guard isEnabled, !isUpdatingFromCloud, !isPushingToCloud else { return }
+
+        let currentSnapshot = makeLocalSyncableSnapshot()
+        guard currentSnapshot != lastLocalSyncableSnapshot else { return }
+        lastLocalSyncableSnapshot = currentSnapshot
 
         // Push changes to iCloud
         pushLocalToCloud()
@@ -441,6 +472,20 @@ final class iCloudSyncService {
     private func purgeCloudSecrets() {
         for key in secretKeys {
             ubiquitousStore.removeObject(forKey: key)
+        }
+    }
+
+    private func makeLocalSyncableSnapshot() -> [String: SyncableValue] {
+        syncableKeys.reduce(into: [:]) { snapshot, key in
+            guard let value = localDefaults.object(forKey: key) else { return }
+
+            if let string = value as? String {
+                snapshot[key] = .string(string)
+            } else if let number = value as? NSNumber {
+                snapshot[key] = .number(number.stringValue)
+            } else {
+                snapshot[key] = .other(String(describing: value))
+            }
         }
     }
 }

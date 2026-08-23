@@ -819,6 +819,8 @@ struct AddTVShowView: View {
         // Don't search if query is empty
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             searchResults = []
+            isSearching = false
+            errorMessage = nil
             return
         }
 

@@ -50,7 +50,7 @@ class TMDBService {
     /// - Parameter timeWindow: "day" or "week" (default: "week")
     /// - Parameter forceRefresh: If true, bypasses cache
     func fetchTrendingMovies(timeWindow: String = "week", forceRefresh: Bool = false) async throws -> [TrendingMovie] {
-        let cacheKey = CacheManager.CacheKey.tmdbTrendingMovies
+        let cacheKey = CacheManager.CacheKey.tmdbTrendingMovies(timeWindow: timeWindow)
 
         if forceRefresh {
             await CacheManager.shared.remove(cacheKey)
@@ -94,7 +94,7 @@ class TMDBService {
     /// - Parameter timeWindow: "day" or "week" (default: "week")
     /// - Parameter forceRefresh: If true, bypasses cache
     func fetchTrendingTVShows(timeWindow: String = "week", forceRefresh: Bool = false) async throws -> [TrendingTVShow] {
-        let cacheKey = CacheManager.CacheKey.tmdbTrendingTVShows
+        let cacheKey = CacheManager.CacheKey.tmdbTrendingTVShows(timeWindow: timeWindow)
 
         if forceRefresh {
             await CacheManager.shared.remove(cacheKey)

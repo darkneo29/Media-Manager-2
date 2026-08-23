@@ -65,6 +65,7 @@ struct WatchDashboardView: View {
             }
             .buttonStyle(.bordered)
             .clipShape(Circle())
+            .disabled(store.isRefreshing)
             .accessibilityLabel("Refresh")
         }
     }
@@ -95,6 +96,7 @@ struct WatchDashboardView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(WatchTheme.accent)
+                .disabled(store.isSearching || store.addingResultId != nil)
 
                 Button {
                     store.searchMedia(kind: store.searchKind, query: store.searchQuery)
@@ -107,7 +109,11 @@ struct WatchDashboardView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-                .disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching)
+                .disabled(
+                    store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    store.isSearching ||
+                    store.addingResultId != nil
+                )
                 .accessibilityLabel("Search")
             }
 
@@ -128,7 +134,8 @@ struct WatchDashboardView: View {
             ForEach(store.searchResults) { result in
                 SearchResultRow(
                     result: result,
-                    isAdding: store.addingResultId == result.id
+                    isAdding: store.addingResultId == result.id,
+                    isDisabled: store.addingResultId != nil || store.isSearching
                 ) {
                     store.addMedia(result)
                 }
@@ -196,6 +203,7 @@ struct WatchDashboardView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(snapshot.downloads.isPaused ? WatchTheme.success : WatchTheme.warning)
+                        .disabled(store.isRefreshing)
                         .accessibilityLabel(snapshot.downloads.isPaused ? "Resume downloads" : "Pause downloads")
                     }
 
@@ -309,6 +317,7 @@ private struct ServiceRow: View {
 private struct SearchResultRow: View {
     var result: WatchMediaSearchResult
     var isAdding: Bool
+    var isDisabled: Bool
     var add: () -> Void
 
     var body: some View {
@@ -351,7 +360,7 @@ private struct SearchResultRow: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(WatchTheme.success)
-            .disabled(isAdding)
+            .disabled(isDisabled)
         }
         .padding(8)
         .background(Color.black.opacity(0.18))

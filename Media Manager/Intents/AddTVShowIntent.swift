@@ -140,7 +140,6 @@ struct AddTVShowIntent: AppIntent {
             )
             preferences.monitorOption = monitorOption.toMonitorOption
             preferences.searchForMissingEpisodes = searchForEpisodes
-            AddMediaPreferences.shared.saveSonarr(preferences)
 
             // Add the TV show
             let addedShow = try await SonarrService.shared.addShow(
@@ -167,7 +166,8 @@ struct AddTVShowIntent: AppIntent {
         } catch {
             // Check if it's an "already exists" error
             let errorMessage = error.localizedDescription
-            if errorMessage.contains("already") || errorMessage.contains("exists") {
+            if errorMessage.localizedCaseInsensitiveContains("already") ||
+                errorMessage.localizedCaseInsensitiveContains("exists") {
                 return .result(
                     value: "TV show already in library",
                     dialog: "This TV show is already in your Sonarr library."
@@ -252,7 +252,8 @@ struct QuickAddTVShowIntent: AppIntent {
 
         } catch {
             let errorMessage = error.localizedDescription
-            if errorMessage.contains("already") || errorMessage.contains("exists") {
+            if errorMessage.localizedCaseInsensitiveContains("already") ||
+                errorMessage.localizedCaseInsensitiveContains("exists") {
                 return .result(
                     value: "TV show already exists",
                     dialog: "This TV show is already in your library."

@@ -125,7 +125,8 @@ class SonarrService {
 
     /// Tests connection to Sonarr server with given credentials
     func testConnection(url: String, apiKey: String) async throws {
-        guard let testURL = URL(string: "\(url)/api/v3/system/status") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let testURL = URL(string: "\(normalizedURL)/api/v3/system/status") else {
             throw URLError(.badURL)
         }
 
@@ -593,7 +594,8 @@ class SonarrService {
 
     /// Fetches logs using specific URL and API key (for settings view)
     func fetchLogs(url: String, apiKey: String, count: Int = 10) async throws -> [LogEntry] {
-        guard let logURL = URL(string: "\(url)/api/v3/log?pageSize=\(count)&sortKey=time&sortDirection=descending") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let logURL = URL(string: "\(normalizedURL)/api/v3/log?pageSize=\(count)&sortKey=time&sortDirection=descending") else {
             throw URLError(.badURL)
         }
 
@@ -750,6 +752,7 @@ class SonarrService {
               var episodeDict = try JSONSerialization.jsonObject(with: getData) as? [String: Any] else {
             throw URLError(.badServerResponse)
         }
+        let seriesId = episodeDict["seriesId"] as? Int
 
         episodeDict["monitored"] = monitored
         let jsonData = try JSONSerialization.data(withJSONObject: episodeDict, options: [])
@@ -764,6 +767,10 @@ class SonarrService {
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw URLError(.badServerResponse)
+        }
+
+        if let seriesId {
+            await CacheManager.shared.remove(CacheManager.CacheKey.episodes(seriesId))
         }
     }
 
@@ -1003,7 +1010,8 @@ class SonarrService {
 
     /// Fetches all backups from the Sonarr server
     func fetchBackups(url: String, apiKey: String) async throws -> [ServerBackup] {
-        guard let backupURL = URL(string: "\(url)/api/v3/system/backup") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let backupURL = URL(string: "\(normalizedURL)/api/v3/system/backup") else {
             throw URLError(.badURL)
         }
 
@@ -1021,7 +1029,8 @@ class SonarrService {
 
     /// Restores a backup on the Sonarr server (triggers restart)
     func restoreBackup(url: String, apiKey: String, backupId: Int) async throws {
-        guard let restoreURL = URL(string: "\(url)/api/v3/system/backup/restore/\(backupId)") else {
+        let normalizedURL = ConfigurationManager.normalizedServerURL(url)
+        guard let restoreURL = URL(string: "\(normalizedURL)/api/v3/system/backup/restore/\(backupId)") else {
             throw URLError(.badURL)
         }
 

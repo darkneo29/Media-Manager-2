@@ -628,6 +628,8 @@ struct AddMovieView: View {
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             searchResults = []
             tmdbResults = []
+            isSearching = false
+            errorMessage = nil
             return
         }
 

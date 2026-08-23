@@ -14,6 +14,7 @@ struct UnraidSettingsView: View {
     @State private var connectedHostname: String?
     @State private var connectedVersion: String?
     @State private var resetTask: Task<Void, Never>?
+    @State private var testAttemptId = UUID()
 
     var body: some View {
         ZStack {
@@ -48,9 +49,12 @@ struct UnraidSettingsView: View {
         .onAppear {
             loadSettings()
         }
+        .onChange(of: editingURL) { _, _ in invalidateConnectionTest() }
+        .onChange(of: editingAPIKey) { _, _ in invalidateConnectionTest() }
         .onDisappear {
             // Cancel any pending reset task
             resetTask?.cancel()
+            testAttemptId = UUID()
             // Save settings on dismiss
             saveSettings()
         }
@@ -416,6 +420,14 @@ struct UnraidSettingsView: View {
         saveDisplayPreferences()
     }
 
+    private func invalidateConnectionTest() {
+        testAttemptId = UUID()
+        resetTask?.cancel()
+        connectedHostname = nil
+        connectedVersion = nil
+        connectionStatus = .idle
+    }
+
     private func saveDisplayPreferences() {
         let defaults = UserDefaults.standard
         defaults.set(showMediaStackFirst, forKey: "unraidShowMediaStackFirst")
@@ -460,25 +472,38 @@ struct UnraidSettingsView: View {
         connectionStatus = .testing
         connectedHostname = nil
         connectedVersion = nil
+        let currentAttempt = UUID()
+        testAttemptId = currentAttempt
+        let testedURL = editingURL
+        let testedAPIKey = editingAPIKey
 
         Task {
             do {
                 let systemInfo = try await UnraidService.shared.testConnection(
-                    url: editingURL,
-                    apiKey: editingAPIKey
+                    url: testedURL,
+                    apiKey: testedAPIKey
                 )
                 await MainActor.run {
-                    connectedHostname = systemInfo.hostname
-                    connectedVersion = systemInfo.version
-                    connectionStatus = .success
-                    // Only save settings on successful connection
-                    saveSettings()
+                    guard testAttemptId == currentAttempt,
+                          editingURL == testedURL,
+                          editingAPIKey == testedAPIKey else { return }
+                    do {
+                        try configuration.saveUnraid(url: testedURL, apiKey: testedAPIKey)
+                        saveDisplayPreferences()
+                        connectedHostname = systemInfo.hostname
+                        connectedVersion = systemInfo.version
+                        connectionStatus = .success
+                    } catch {
+                        connectionStatus = .failure("Connected, but settings could not be saved: \(error.localizedDescription)")
+                    }
                     resetStatusAfterDelay()
                 }
             } catch {
                 await MainActor.run {
+                    guard testAttemptId == currentAttempt,
+                          editingURL == testedURL,
+                          editingAPIKey == testedAPIKey else { return }
                     connectionStatus = .failure(error.localizedDescription)
-                    // Don't save invalid settings
                     resetStatusAfterDelay()
                 }
             }
