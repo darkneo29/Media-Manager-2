@@ -35,6 +35,37 @@ enum WhatsNewCatalog {
     // Keep the newest release first so Settings can summarize the latest changes.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            id: "2026-09-05-version-2.8",
+            title: "Version 2.8",
+            subtitle: "Automatic download updates and a faster library",
+            entries: [
+                WhatsNewEntry(
+                    id: "downloads-more-menu-refresh",
+                    kind: .fix,
+                    title: "Automatic Download Updates",
+                    description: "Active downloads refresh when you open Downloads and every five seconds while visible, including when opened through the iPhone More menu."
+                ),
+                WhatsNewEntry(
+                    id: "accurate-show-matching",
+                    kind: .fix,
+                    title: "More Accurate TV Show Matching",
+                    description: "TVDB IDs and release years keep remakes and shows with similar titles from being mistaken for items already in your library."
+                ),
+                WhatsNewEntry(
+                    id: "faster-recent-library",
+                    kind: .improvement,
+                    title: "Faster Recent Items",
+                    description: "The dashboard reuses recent-item results and avoids unnecessary sorting and date parsing for large libraries."
+                ),
+                WhatsNewEntry(
+                    id: "image-cache-memory",
+                    kind: .improvement,
+                    title: "Better Image Memory Management",
+                    description: "The image cache now accounts for Retina image sizes when managing its memory budget."
+                )
+            ]
+        ),
+        WhatsNewRelease(
             id: "2026-06-29-build-8",
             title: "Version 2.7 Build 8",
             subtitle: "Guided adding, deeper Radarr and Sonarr controls, and richer activity tracking",

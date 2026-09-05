@@ -335,25 +335,25 @@ struct Media_ManagerTests {
     }
 
     @Test
-    func downloadsPollingPolicyOnlyPollsForActiveForegroundConfiguredDownloadsTab() {
-        let shouldPoll: (Bool, Bool, Bool, ScenePhase, Bool) -> Bool = {
-            DownloadsPollingPolicy.shouldPoll(
-                isActiveTab: $0,
-                isViewVisible: $1,
-                isViewingActiveQueue: $2,
-                scenePhase: $3,
-                isSabConfigured: $4
-            )
-        }
-
+    func downloadsPollingFollowsVisibilityIncludingMoreMenuNavigation() {
+        // Downloads can be visible through More without the parent selection
+        // being 4. Polling deliberately has no parent tab-selection input.
         #expect(DownloadsPollingPolicy.refreshIntervalSeconds == 5)
-        #expect(shouldPoll(true, true, true, .active, true))
-        #expect(!shouldPoll(false, true, true, .active, true))
-        #expect(!shouldPoll(true, false, true, .active, true))
-        #expect(!shouldPoll(true, true, false, .active, true))
-        #expect(!shouldPoll(true, true, true, .background, true))
-        #expect(!shouldPoll(true, true, true, .inactive, true))
-        #expect(!shouldPoll(true, true, true, .active, false))
+        for visible in [false, true] {
+            for activeQueue in [false, true] {
+                for phase in [ScenePhase.active, .inactive, .background] {
+                    for configured in [false, true] {
+                        let result = DownloadsPollingPolicy.shouldPoll(
+                            isViewVisible: visible,
+                            isViewingActiveQueue: activeQueue,
+                            scenePhase: phase,
+                            isSabConfigured: configured
+                        )
+                        #expect(result == (visible && activeQueue && phase == .active && configured))
+                    }
+                }
+            }
+        }
     }
 
     @Test
@@ -499,6 +499,58 @@ struct Media_ManagerTests {
 
         #expect(handler.pendingDestination == .settings)
         #expect(handler.pendingBackupURL == url)
+    }
+
+    @Test @MainActor
+    func showMatchingDoesNotConfuseRemakesOrDifferentTVDBIDs() {
+        let library = LibraryStateManager()
+        let original = TVShow(id: 1, title: "Example Show", year: 2004,
+                              overview: nil, network: nil, status: "ended",
+                              monitored: true, qualityProfileId: 1, images: [],
+                              statistics: nil, tvdbId: 100)
+        library.addShowLocally(original)
+
+        #expect(library.isShowInLibrary(tvdbId: 100, name: "Alternate title", year: 2026))
+        #expect(library.findShow(tvdbId: 100, name: "Alternate title", year: 2026)?.id == 1)
+        #expect(!library.isShowInLibrary(tvdbId: 200, name: original.title, year: 2004))
+        #expect(library.findShow(tvdbId: 200, name: original.title, year: 2004) == nil)
+        #expect(!library.isShowInLibrary(name: original.title, year: 2026))
+        #expect(library.findShow(byName: original.title, year: 2026) == nil)
+        #expect(library.isShowInLibrary(tvdbId: nil, name: "EXAMPLE-SHOW", year: 2004))
+        #expect(library.findShow(tvdbId: 0, name: "EXAMPLE-SHOW", year: nil)?.id == 1)
+        #expect(library.isShowInLibrary(name: original.title, year: 0))
+    }
+
+    @Test @MainActor
+    func recentlyAddedShowsSortMixedDatesAndInvalidateAfterUpdates() {
+        let library = LibraryStateManager()
+        func show(_ id: Int, _ date: String?) -> TVShow {
+            TVShow(id: id, title: "Show \(id)", year: 2026, overview: nil,
+                   network: nil, status: "continuing", monitored: true,
+                   qualityProfileId: 1, images: [], statistics: nil, added: date)
+        }
+        library.addShowLocally(show(1, nil))
+        library.addShowLocally(show(2, "2026-09-01T00:00:00Z"))
+        library.addShowLocally(show(3, "2026-09-02T00:00:00.123Z"))
+        #expect(library.recentlyAddedShows.map(\.id) == [3, 2, 1])
+        library.updateShowLocally(show(1, "2026-09-03T00:00:00Z"))
+        #expect(library.recentlyAddedShows.map(\.id) == [1, 3, 2])
+        library.removeShowLocally(id: 3)
+        #expect(library.recentlyAddedShows.map(\.id) == [1, 2])
+    }
+
+    @Test @MainActor
+    func imageMemoryCostIncludesRetinaPixels() throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 10, height: 20), format: format)
+            .image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 10, height: 20))
+            }
+        let cgImage = try #require(image.cgImage)
+        #expect(ImageCacheManager.memoryCost(of: image) == cgImage.bytesPerRow * cgImage.height)
+        #expect(ImageCacheManager.memoryCost(of: image) >= 30 * 60 * 4)
     }
 
     private func makeDefaults(suffix: String) -> TestDefaultsStore {

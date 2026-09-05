@@ -12,13 +12,13 @@ class LibraryStateManager: ObservableObject {
     @Published private(set) var movies: [Movie] = [] {
         didSet {
             moviesRevision += 1
-            invalidateCachedIndexes()
+            invalidateMovieIndexes()
         }
     }
     @Published private(set) var tvShows: [TVShow] = [] {
         didSet {
             tvShowsRevision += 1
-            invalidateCachedIndexes()
+            invalidateShowIndexes()
         }
     }
     @Published private(set) var qualityProfiles: [QualityProfile] = []
@@ -52,19 +52,21 @@ class LibraryStateManager: ObservableObject {
     private var showsLoadGeneration: UInt64 = 0
     private var profilesLoadGeneration: UInt64 = 0
 
-    /// Invalidate all cached indexes when data changes
-    private func invalidateCachedIndexes() {
+    private func invalidateMovieIndexes() {
         _movieTmdbIds = nil
+        _comingSoonMovies = nil
+        _recentlyAddedMovies = nil
+        _sortedMovies = nil
+    }
+
+    private func invalidateShowIndexes() {
         _showTvdbIds = nil
         _showNormalizedTitles = nil
         _showKeys = nil
         _showLeetTitles = nil
         _showLeetKeys = nil
-        _comingSoonMovies = nil
         _comingSoonShows = nil
-        _recentlyAddedMovies = nil
         _recentlyAddedShows = nil
-        _sortedMovies = nil
         _sortedShows = nil
     }
 
@@ -137,7 +139,8 @@ class LibraryStateManager: ObservableObject {
     /// Recently added movies (sorted by added date)
     var recentlyAddedMovies: [Movie] {
         if let cached = _recentlyAddedMovies { return cached }
-        let result = movies.sorted { ($0.addedDate ?? .distantPast) > ($1.addedDate ?? .distantPast) }
+        let result = movies.map { (item: $0, date: $0.addedDate ?? .distantPast) }
+            .sorted { $0.date > $1.date }.map(\.item)
         _recentlyAddedMovies = result
         return result
     }
@@ -145,7 +148,8 @@ class LibraryStateManager: ObservableObject {
     /// Recently added shows (sorted by added date)
     var recentlyAddedShows: [TVShow] {
         if let cached = _recentlyAddedShows { return cached }
-        let result = tvShows.sorted { ($0.addedDate ?? .distantPast) > ($1.addedDate ?? .distantPast) }
+        let result = tvShows.map { (item: $0, date: $0.addedDate ?? .distantPast) }
+            .sorted { $0.date > $1.date }.map(\.item)
         _recentlyAddedShows = result
         return result
     }
@@ -175,7 +179,7 @@ class LibraryStateManager: ObservableObject {
 
     private let refreshThreshold: TimeInterval = 30 // 30 seconds minimum between refreshes
 
-    private init() {}
+    init() {}
 
     // MARK: - Library Lookup
 
@@ -193,38 +197,19 @@ class LibraryStateManager: ObservableObject {
     func isShowInLibrary(name: String, year: Int?) -> Bool {
         let normalizedName = normalizeTitle(name)
 
-        // First pass: match with digits intact
-        if let year = year {
-            let key = "\(normalizedName)-\(year)"
-            if showKeys.contains(key) {
-                return true
-            }
+        if let year = year, year > 0 {
+            return showKeys.contains("\(normalizedName)-\(year)") ||
+                showLeetKeys.contains("\(normalizeTitleLeetspeak(name))-\(year)")
         }
-        if showNormalizedTitles.contains(normalizedName) {
-            return true
-        }
-
-        // Second pass: match with leetspeak normalization
-        let leetName = normalizeTitleLeetspeak(name)
-        if showLeetTitles.contains(leetName) {
-            return true
-        }
-        if let year = year {
-            if showLeetKeys.contains("\(leetName)-\(year)") {
-                return true
-            }
-        }
-
-        return false
+        return showNormalizedTitles.contains(normalizedName) ||
+            showLeetTitles.contains(normalizeTitleLeetspeak(name))
     }
 
-    /// Check if a show is in the library - uses TVDB ID if available, falls back to name/year
+    /// A known TVDB ID is authoritative; use title matching only without one.
     func isShowInLibrary(tvdbId: Int?, name: String, year: Int?) -> Bool {
-        // Prefer TVDB ID matching (most reliable)
-        if let tvdbId = tvdbId, showTvdbIds.contains(tvdbId) {
-            return true
+        if let tvdbId, tvdbId > 0 {
+            return showTvdbIds.contains(tvdbId)
         }
-        // Fallback to name/year matching
         return isShowInLibrary(name: name, year: year)
     }
 
@@ -242,33 +227,22 @@ class LibraryStateManager: ObservableObject {
     func findShow(byName name: String, year: Int?) -> TVShow? {
         let normalizedName = normalizeTitle(name)
 
-        // First pass: match with digits intact
-        if let year = year {
-            if let show = tvShows.first(where: { normalizeTitle($0.title) == normalizedName && $0.year == year }) {
-                return show
-            }
+        let candidates = tvShows.filter { show in
+            guard let year, year > 0 else { return true }
+            return show.year == year
         }
-        if let show = tvShows.first(where: { normalizeTitle($0.title) == normalizedName }) {
+        if let show = candidates.first(where: { normalizeTitle($0.title) == normalizedName }) {
             return show
         }
-
-        // Second pass: match with leetspeak normalization
         let leetName = normalizeTitleLeetspeak(name)
-        if let year = year {
-            if let show = tvShows.first(where: { normalizeTitleLeetspeak($0.title) == leetName && $0.year == year }) {
-                return show
-            }
-        }
-        return tvShows.first { normalizeTitleLeetspeak($0.title) == leetName }
+        return candidates.first { normalizeTitleLeetspeak($0.title) == leetName }
     }
 
-    /// Find a TV show - uses TVDB ID if available, falls back to name/year
+    /// A known TVDB ID is authoritative; use title matching only without one.
     func findShow(tvdbId: Int?, name: String, year: Int?) -> TVShow? {
-        // Prefer TVDB ID matching (most reliable)
-        if let tvdbId = tvdbId, let show = findShow(byTvdbId: tvdbId) {
-            return show
+        if let tvdbId, tvdbId > 0 {
+            return findShow(byTvdbId: tvdbId)
         }
-        // Fallback to name/year matching
         return findShow(byName: name, year: year)
     }
 

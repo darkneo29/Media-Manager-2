@@ -237,7 +237,7 @@ struct MainTabView: View {
                 }
                 .tag(3)
 
-            DownloadsView(isActiveTab: (selectedTab ?? 0) == 4)
+            DownloadsView()
                 .tabItem {
                     Label("Downloads", systemImage: "arrow.down.circle.fill")
                 }

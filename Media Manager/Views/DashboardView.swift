@@ -423,7 +423,7 @@ struct DashboardView: View {
         var items: [(id: String, title: String, subtitle: String, posterURL: URL?, addedDate: Date?, isMovie: Bool)] = []
 
         // Recent movies from shared state
-        for movie in libraryState.movies {
+        for movie in libraryState.recentlyAddedMovies.prefix(15) {
             let posterURL = movie.images.first(where: { $0.coverType == "poster" })
                 .flatMap { $0.remoteUrl.flatMap { URL(string: $0) } }
             items.append((
@@ -437,7 +437,7 @@ struct DashboardView: View {
         }
 
         // Recent shows from shared state
-        for show in libraryState.tvShows {
+        for show in libraryState.recentlyAddedShows.prefix(15) {
             let posterURL = show.images.first(where: { $0.coverType == "poster" })
                 .flatMap { $0.remoteUrl.flatMap { URL(string: $0) } }
             items.append((

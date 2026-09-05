@@ -89,8 +89,16 @@ actor ImageCacheManager {
     }
 
     private func setInMemory(key: String, image: UIImage) {
-        let cost = Int(image.size.width * image.size.height * 4) // Approximate bytes
+        let cost = Self.memoryCost(of: image)
         memoryCache.setObject(image, forKey: key as NSString, cost: cost)
+    }
+
+    /// Account for decoded pixels, including Retina scale and row padding.
+    nonisolated static func memoryCost(of image: UIImage) -> Int {
+        if let cgImage = image.cgImage {
+            return cgImage.bytesPerRow * cgImage.height
+        }
+        return Int(image.size.width * image.scale * image.size.height * image.scale * 4)
     }
 
     // MARK: - Disk Cache Operations

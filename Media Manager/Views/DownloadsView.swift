@@ -3,7 +3,6 @@ import Combine
 
 struct DownloadsView: View {
     @ObservedObject private var configuration = ConfigurationManager.shared
-    var isActiveTab: Bool = true
 
     @State private var selectedTab = 0
     @State private var activeDownloads: [Download] = []
@@ -15,6 +14,8 @@ struct DownloadsView: View {
     @State private var queueErrorMessage: String?
     @State private var historyErrorMessage: String?
     @State private var showClearHistoryAlert = false
+    // Visibility also covers navigation through the iPhone More menu, where
+    // the parent TabView selection is not a reliable polling gate.
     @State private var isViewVisible = false
 
     // Activity queue state
@@ -54,7 +55,6 @@ struct DownloadsView: View {
 
     private var shouldPollActiveDownloads: Bool {
         DownloadsPollingPolicy.shouldPoll(
-            isActiveTab: isActiveTab,
             isViewVisible: isViewVisible,
             isViewingActiveQueue: selectedTab == 0,
             scenePhase: scenePhase,
@@ -205,8 +205,8 @@ struct DownloadsView: View {
             .onDisappear {
                 isViewVisible = false
             }
-            .task(id: isActiveTab) {
-                guard isActiveTab, selectedTab != 0 else { return }
+            .task(id: isViewVisible) {
+                guard isViewVisible, selectedTab != 0 else { return }
                 await loadSelectedTabData(for: selectedTab)
             }
             .task(id: shouldPollActiveDownloads) {
@@ -224,7 +224,7 @@ struct DownloadsView: View {
                 }
             }
             .onChange(of: scenePhase) { _, newPhase in
-                if newPhase == .active && isActiveTab && selectedTab != 0 {
+                if newPhase == .active && isViewVisible && selectedTab != 0 {
                     let tab = selectedTab
                     Task {
                         await loadSelectedTabData(for: tab, force: true)
@@ -232,7 +232,7 @@ struct DownloadsView: View {
                 }
             }
             .onChange(of: selectedTab) { _, newValue in
-                if isActiveTab && newValue != 0 {
+                if isViewVisible && newValue != 0 {
                     Task {
                         await loadSelectedTabData(for: newValue, force: loadedTabs.contains(newValue))
                     }
@@ -746,7 +746,7 @@ struct DownloadsView: View {
     // MARK: - Data Loading
 
     private func loadSelectedTabData(for tab: Int, force: Bool = false) async {
-        guard isActiveTab else { return }
+        guard isViewVisible else { return }
         if !force && loadedTabs.contains(tab) {
             return
         }
