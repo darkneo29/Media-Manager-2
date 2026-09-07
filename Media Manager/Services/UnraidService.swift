@@ -1158,7 +1158,7 @@ class UnraidService {
         default: multiplier = 1
         }
 
-        return Int64(number * multiplier)
+        return ServerMetric.byteCount(number * multiplier)
     }
 
     private func bytesFromKilobyteString(_ value: String?) -> Int64? {

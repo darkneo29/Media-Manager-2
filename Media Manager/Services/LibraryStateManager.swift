@@ -179,7 +179,16 @@ class LibraryStateManager: ObservableObject {
 
     private let refreshThreshold: TimeInterval = 30 // 30 seconds minimum between refreshes
 
-    init() {}
+    private let isRadarrConfigured: @MainActor () -> Bool
+    private let isSonarrConfigured: @MainActor () -> Bool
+
+    init(
+        isRadarrConfigured: @escaping @MainActor () -> Bool = { ConfigurationManager.shared.isRadarrConfigured },
+        isSonarrConfigured: @escaping @MainActor () -> Bool = { ConfigurationManager.shared.isSonarrConfigured }
+    ) {
+        self.isRadarrConfigured = isRadarrConfigured
+        self.isSonarrConfigured = isSonarrConfigured
+    }
 
     // MARK: - Library Lookup
 
@@ -282,6 +291,10 @@ class LibraryStateManager: ObservableObject {
 
     /// Load movies from Radarr
     func loadMovies(forceRefresh: Bool = false) async {
+        guard isRadarrConfigured() else {
+            resetMovies()
+            return
+        }
         // Prevent rapid refreshes
         if !forceRefresh, let lastRefresh = lastMoviesRefresh,
            Date().timeIntervalSince(lastRefresh) < refreshThreshold {
@@ -312,6 +325,10 @@ class LibraryStateManager: ObservableObject {
 
     /// Load TV shows from Sonarr
     func loadShows(forceRefresh: Bool = false) async {
+        guard isSonarrConfigured() else {
+            resetShows()
+            return
+        }
         // Prevent rapid refreshes
         if !forceRefresh, let lastRefresh = lastShowsRefresh,
            Date().timeIntervalSince(lastRefresh) < refreshThreshold {
@@ -342,6 +359,10 @@ class LibraryStateManager: ObservableObject {
 
     /// Load quality profiles from Sonarr (cached for 24 hours)
     func loadQualityProfiles(forceRefresh: Bool = false) async {
+        guard isSonarrConfigured() else {
+            resetProfiles()
+            return
+        }
         guard forceRefresh || !isLoadingProfiles else { return }
         profilesLoadGeneration &+= 1
         let loadGeneration = profilesLoadGeneration
@@ -364,10 +385,35 @@ class LibraryStateManager: ObservableObject {
         }
     }
 
+    private func resetMovies() {
+        moviesLoadGeneration &+= 1
+        if !movies.isEmpty { movies = [] }
+        lastMoviesRefresh = nil
+        moviesErrorMessage = nil
+        isLoadingMovies = false
+    }
+
+    private func resetShows() {
+        showsLoadGeneration &+= 1
+        if !tvShows.isEmpty { tvShows = [] }
+        lastShowsRefresh = nil
+        showsErrorMessage = nil
+        isLoadingShows = false
+    }
+
+    private func resetProfiles() {
+        profilesLoadGeneration &+= 1
+        qualityProfiles = []
+        lastProfilesRefresh = nil
+        qualityProfilesErrorMessage = nil
+        isLoadingProfiles = false
+    }
+
     // MARK: - Cache Invalidation
 
     /// Invalidate movies cache and refresh
     func invalidateMovies() async {
+        resetMovies()
         await RadarrService.shared.invalidateCache()
         lastMoviesRefresh = nil
         await loadMovies(forceRefresh: true)
@@ -375,13 +421,20 @@ class LibraryStateManager: ObservableObject {
 
     /// Invalidate shows cache and refresh
     func invalidateShows() async {
+        resetShows()
+        resetProfiles()
         await SonarrService.shared.invalidateCache()
         lastShowsRefresh = nil
-        await loadShows(forceRefresh: true)
+        async let shows: () = loadShows(forceRefresh: true)
+        async let profiles: () = loadQualityProfiles(forceRefresh: true)
+        _ = await (shows, profiles)
     }
 
     /// Invalidate all caches
     func invalidateAll() async {
+        resetMovies()
+        resetShows()
+        resetProfiles()
         await RadarrService.shared.invalidateCache()
         await SonarrService.shared.invalidateCache()
         await TMDBService.shared.invalidateCache()

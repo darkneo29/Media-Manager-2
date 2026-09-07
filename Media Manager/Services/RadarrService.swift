@@ -69,17 +69,16 @@ class RadarrService {
 
     /// Converts a relative image path from Radarr to a full URL
     func imageURL(for relativePath: String) -> URL? {
-        // Handle paths that are already full URLs
-        if relativePath.hasPrefix("http") {
-            return URL(string: relativePath)
-        }
-        // Prepend server URL to relative paths
-        return URL(string: serverURL + relativePath)
+        ServerImageURL.resolve(relativePath, serverURL: serverURL)
     }
 
     /// Fetches image data with proper authentication
     func fetchImageData(from url: URL) async throws -> Data {
-        let request = authenticatedRequest(url: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        if ServerImageURL.matchesServer(url, serverURL: serverURL) {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -307,9 +306,7 @@ class RadarrService {
         if let tags = movie.tags {
             movieDict["tags"] = tags
         }
-        if let rootFolderPath = movie.rootFolderPath {
-            movieDict["rootFolderPath"] = rootFolderPath
-        }
+        movieDict = try MediaFolderPath.applyingRoot(movie.rootFolderPath, to: movieDict)
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: movieDict)

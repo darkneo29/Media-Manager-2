@@ -210,6 +210,7 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     private func applySnapshotData(_ data: Data) {
         do {
             let decodedSnapshot = try decoder.decode(WatchDashboardSnapshot.self, from: data)
+            guard decodedSnapshot.generatedAt >= snapshot.generatedAt else { return }
             snapshot = decodedSnapshot
             connectionStatus = "Synced \(relativeSyncText(for: decodedSnapshot.generatedAt))"
             isRefreshing = false

@@ -62,18 +62,16 @@ class SonarrService {
 
     /// Converts a relative image path from Sonarr to a full URL
     func imageURL(for relativePath: String) -> URL? {
-        // Handle paths that are already full URLs
-        if relativePath.hasPrefix("http") {
-            return URL(string: relativePath)
-        }
-        // Prepend server URL to relative paths
-        guard !serverURL.isEmpty else { return nil }
-        return URL(string: serverURL + relativePath)
+        ServerImageURL.resolve(relativePath, serverURL: serverURL)
     }
 
     /// Fetches image data with proper authentication
     func fetchImageData(from url: URL) async throws -> Data {
-        let request = authenticatedRequest(url: url)
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 30
+        if ServerImageURL.matchesServer(url, serverURL: serverURL) {
+            request.setValue(apiKey, forHTTPHeaderField: "X-Api-Key")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: request)
 
@@ -317,9 +315,7 @@ class SonarrService {
         if let tags = show.tags {
             showDict["tags"] = tags
         }
-        if let rootFolderPath = show.rootFolderPath {
-            showDict["rootFolderPath"] = rootFolderPath
-        }
+        showDict = try MediaFolderPath.applyingRoot(show.rootFolderPath, to: showDict)
 
         // Convert back to JSON
         let jsonData = try JSONSerialization.data(withJSONObject: showDict)

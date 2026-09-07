@@ -168,8 +168,8 @@ actor ImageCacheManager {
     /// Fetch image with authentication support for Radarr/Sonarr URLs
     private func fetchImage(from url: URL, key: String) async throws -> UIImage? {
         // Determine if this is an authenticated URL
-        let isRadarrURL = matchesConfiguredServer(url, configuredURL: cachedRadarrURL)
-        let isSonarrURL = matchesConfiguredServer(url, configuredURL: cachedSonarrURL)
+        let isRadarrURL = ServerImageURL.matchesServer(url, serverURL: cachedRadarrURL)
+        let isSonarrURL = ServerImageURL.matchesServer(url, serverURL: cachedSonarrURL)
 
         var request = URLRequest(url: url)
         request.cachePolicy = .returnCacheDataElseLoad
@@ -197,28 +197,6 @@ actor ImageCacheManager {
         saveToDisk(key: key, data: data)
 
         return image
-    }
-
-    private func matchesConfiguredServer(_ url: URL, configuredURL: String?) -> Bool {
-        guard let configuredURL,
-              !configuredURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let server = URL(string: ConfigurationManager.normalizedServerURL(configuredURL)),
-              let serverScheme = server.scheme?.lowercased(),
-              let candidateScheme = url.scheme?.lowercased(),
-              let serverHost = server.host?.lowercased(),
-              let candidateHost = url.host?.lowercased(),
-              serverScheme == candidateScheme,
-              serverHost == candidateHost,
-              server.port == url.port
-        else {
-            return false
-        }
-
-        let serverPath = server.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard !serverPath.isEmpty else { return true }
-
-        let candidatePath = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return candidatePath == serverPath || candidatePath.hasPrefix(serverPath + "/")
     }
 
     /// Prefetch images for a list of URLs (useful for scroll views)

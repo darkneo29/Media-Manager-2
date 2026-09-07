@@ -27,7 +27,11 @@ struct EditTVShowView: View {
         _monitorNewItems = State(initialValue: SonarrNewItemMonitor(rawValue: show.monitorNewItems ?? "") ?? .all)
         _seasonFolder = State(initialValue: show.seasonFolder ?? true)
         _selectedTagIds = State(initialValue: Set(show.tags ?? []))
-        _selectedRootFolderPath = State(initialValue: show.rootFolderPath ?? "")
+        _selectedRootFolderPath = State(initialValue: MediaFolderPath.currentRoot(rootFolderPath: show.rootFolderPath, path: show.path))
+    }
+
+    private var originalRootFolderPath: String {
+        MediaFolderPath.currentRoot(rootFolderPath: show.rootFolderPath, path: show.path)
     }
 
     private var selectedTagSummary: String {
@@ -182,6 +186,10 @@ struct EditTVShowView: View {
                                         .foregroundColor(ColorPalette.textPrimaryDark)
                                     Spacer()
                                     Picker("Root Folder", selection: $selectedRootFolderPath) {
+                                        if !rootFolders.contains(where: { $0.path == selectedRootFolderPath }) {
+                                            Text(selectedRootFolderPath.isEmpty ? "Keep current folder" : selectedRootFolderPath)
+                                                .tag(selectedRootFolderPath)
+                                        }
                                         ForEach(rootFolders) { folder in
                                             Text(folder.folderName).tag(folder.path)
                                         }
@@ -198,7 +206,7 @@ struct EditTVShowView: View {
                                         .stroke(ColorPalette.divider, lineWidth: 1)
                                 )
 
-                                if selectedRootFolderPath != (show.rootFolderPath ?? "") {
+                                if selectedRootFolderPath != originalRootFolderPath {
                                     Toggle("Move existing files", isOn: $moveFiles)
                                         .tint(ColorPalette.primary)
                                         .padding(.vertical, AppSpacing.sm)
@@ -333,9 +341,6 @@ struct EditTVShowView: View {
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
-                    if selectedRootFolderPath.isEmpty {
-                        selectedRootFolderPath = folders.first?.path ?? ""
-                    }
                     if let fetchedTags {
                         tags = fetchedTags
                         selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
@@ -356,6 +361,7 @@ struct EditTVShowView: View {
     private func saveChanges() {
         isSaving = true
         errorMessage = nil
+        let rootChanged = selectedRootFolderPath != originalRootFolderPath
 
         var updatedShow = show
         updatedShow.monitored = monitored
@@ -364,11 +370,10 @@ struct EditTVShowView: View {
         updatedShow.monitorNewItems = monitorNewItems.rawValue
         updatedShow.seasonFolder = seasonFolder
         updatedShow.tags = selectedTagIds.sorted()
-        updatedShow.rootFolderPath = selectedRootFolderPath
+        updatedShow.rootFolderPath = rootChanged && !selectedRootFolderPath.isEmpty ? selectedRootFolderPath : nil
 
         Task {
             do {
-                let rootChanged = selectedRootFolderPath != (show.rootFolderPath ?? "")
                 try await SonarrService.shared.updateShow(show: updatedShow, moveFiles: rootChanged && moveFiles)
                 await MainActor.run {
                     dismiss()

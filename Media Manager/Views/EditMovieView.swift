@@ -23,7 +23,11 @@ struct EditMovieView: View {
         _selectedQualityProfileId = State(initialValue: movie.qualityProfileId ?? 1)
         _selectedMinimumAvailability = State(initialValue: RadarrMinimumAvailability(rawValue: movie.minimumAvailability ?? "") ?? .released)
         _selectedTagIds = State(initialValue: Set(movie.tags ?? []))
-        _selectedRootFolderPath = State(initialValue: movie.rootFolderPath ?? "")
+        _selectedRootFolderPath = State(initialValue: MediaFolderPath.currentRoot(rootFolderPath: movie.rootFolderPath, path: movie.path))
+    }
+
+    private var originalRootFolderPath: String {
+        MediaFolderPath.currentRoot(rootFolderPath: movie.rootFolderPath, path: movie.path)
     }
 
     private var selectedTagSummary: String {
@@ -137,6 +141,10 @@ struct EditMovieView: View {
                                         .foregroundColor(ColorPalette.textPrimaryDark)
                                     Spacer()
                                     Picker("Root Folder", selection: $selectedRootFolderPath) {
+                                        if !rootFolders.contains(where: { $0.path == selectedRootFolderPath }) {
+                                            Text(selectedRootFolderPath.isEmpty ? "Keep current folder" : selectedRootFolderPath)
+                                                .tag(selectedRootFolderPath)
+                                        }
                                         ForEach(rootFolders) { folder in
                                             Text(folder.folderName).tag(folder.path)
                                         }
@@ -153,7 +161,7 @@ struct EditMovieView: View {
                                         .stroke(ColorPalette.divider, lineWidth: 1)
                                 )
 
-                                if selectedRootFolderPath != (movie.rootFolderPath ?? "") {
+                                if selectedRootFolderPath != originalRootFolderPath {
                                     Toggle("Move existing files", isOn: $moveFiles)
                                         .tint(ColorPalette.primary)
                                         .padding(.vertical, AppSpacing.sm)
@@ -240,7 +248,7 @@ struct EditMovieView: View {
                     }
                     .fontWeight(.semibold)
                     .foregroundColor(ColorPalette.secondary)
-                    .disabled(isSaving)
+                    .disabled(isSaving || isLoadingOptions)
                     .opacity(isSaving ? 0.5 : 1)
                 }
             }
@@ -262,9 +270,6 @@ struct EditMovieView: View {
                 await MainActor.run {
                     qualityProfiles = profiles
                     rootFolders = folders
-                    if selectedRootFolderPath.isEmpty {
-                        selectedRootFolderPath = folders.first?.path ?? ""
-                    }
                     if let fetchedTags {
                         tags = fetchedTags
                         selectedTagIds = selectedTagIds.intersection(Set(fetchedTags.map(\.id)))
@@ -285,6 +290,7 @@ struct EditMovieView: View {
     private func saveChanges() {
         isSaving = true
         errorMessage = nil
+        let rootChanged = selectedRootFolderPath != originalRootFolderPath
 
         let updatedMovie = Movie(
             id: movie.id,
@@ -302,14 +308,13 @@ struct EditMovieView: View {
             physicalRelease: movie.physicalRelease,
             inCinemas: movie.inCinemas,
             minimumAvailability: selectedMinimumAvailability.rawValue,
-            rootFolderPath: selectedRootFolderPath,
+            rootFolderPath: rootChanged && !selectedRootFolderPath.isEmpty ? selectedRootFolderPath : nil,
             path: movie.path,
             tags: selectedTagIds.sorted()
         )
 
         Task {
             do {
-                let rootChanged = selectedRootFolderPath != (movie.rootFolderPath ?? "")
                 try await RadarrService.shared.updateMovie(movie: updatedMovie, moveFiles: rootChanged && moveFiles)
                 await MainActor.run {
                     dismiss()

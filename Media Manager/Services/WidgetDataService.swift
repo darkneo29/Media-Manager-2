@@ -67,8 +67,7 @@ class WidgetDataService {
         #if os(iOS)
         WatchSnapshotService.shared.sync(
             movies: movies,
-            tvShows: tvShows,
-            forceSend: forceReload
+            tvShows: tvShows
         )
         #endif
 

@@ -33,6 +33,107 @@ private final class TestCloudStore: KeyValueStoring {
 
 struct Media_ManagerTests {
 
+
+    @Test @MainActor
+    func unconfiguredLibraryClearsStaleDataWithoutRequestErrors() async {
+        let library = LibraryStateManager(isRadarrConfigured: { false }, isSonarrConfigured: { false })
+        library.addMovieLocally(Movie(id: 1, title: "Old server movie", year: 2020, overview: nil, runtime: 0, monitored: true, status: "released", images: []))
+        library.addShowLocally(TVShow(id: 2, title: "Old server show", year: 2020, overview: nil, network: nil, status: "ended", monitored: true, qualityProfileId: 1, images: [], statistics: nil))
+        await library.loadAll(forceRefresh: true)
+        #expect(library.movies.isEmpty)
+        #expect(library.tvShows.isEmpty)
+        #expect(library.qualityProfiles.isEmpty)
+        #expect(library.moviesErrorMessage == nil)
+        #expect(library.showsErrorMessage == nil)
+        #expect(library.qualityProfilesErrorMessage == nil)
+        #expect(library.lastMoviesRefresh == nil)
+        #expect(library.lastShowsRefresh == nil)
+        #expect(!library.isLoadingMovies && !library.isLoadingShows && !library.isLoadingProfiles)
+    }
+
+    @Test @MainActor
+    func malformedDownloadMetricsDoNotCrashQueueOrHistory() throws {
+        let queueData = Data(#"{"queue":{"kbpersec":"nan","slots":[{"nzo_id":"1","filename":"Example","percentage":"nan","mb":"1e100","mbleft":"-5"}]}}"#.utf8)
+        let response = try JSONDecoder().decode(SabNZBQueueResponse.self, from: queueData)
+        let queue = SabNZBService.shared.convertToDownloadQueue(response)
+        #expect(queue.speed == 0)
+        let download = try #require(queue.downloads.first)
+        #expect(download.progress == 0)
+        #expect(download.size == 0)
+
+        let historyData = Data(#"{"history":{"slots":[{"name":"Example","bytes":1e100,"completed":1e100,"download_time":1e100,"size":"999999999999999999999999999999 TB"}]}}"#.utf8)
+        let history = try JSONDecoder().decode(SabNZBHistoryResponse.self, from: historyData)
+        let item = try #require(history.history.slots.first)
+        #expect(item.bytes == 0)
+        #expect(item.completed == 0)
+        #expect(item.download_time == 0)
+        #expect(ServerMetric.byteCount(.infinity) == 0)
+        #expect(ServerMetric.byteCount(1536.8) == 1536)
+    }
+
+    @Test
+    func rootFolderEditUpdatesDestinationAndPreservesOtherFields() throws {
+        let original: [String: Any] = [
+            "path": "/movies/Arrival (2016)", "rootFolderPath": "/movies",
+            "qualityProfileId": 7, "monitored": true
+        ]
+        let moved = try MediaFolderPath.applyingRoot("/archive/", to: original)
+        #expect(moved["path"] as? String == "/archive/Arrival (2016)")
+        #expect(moved["rootFolderPath"] as? String == "/archive/")
+        #expect(moved["qualityProfileId"] as? Int == 7)
+        #expect(moved["monitored"] as? Bool == true)
+        let unchanged = try MediaFolderPath.applyingRoot("/movies/", to: original)
+        #expect(unchanged["path"] as? String == original["path"] as? String)
+    }
+
+    @Test
+    func rootFolderEditSupportsWindowsAndMissingRootMetadata() throws {
+        let original: [String: Any] = ["path": #"C:\TV\Example Show"#]
+        #expect(MediaFolderPath.currentRoot(rootFolderPath: nil, path: original["path"] as? String) == #"C:\TV"#)
+        let moved = try MediaFolderPath.applyingRoot(#"D:\Shows"#, to: original)
+        #expect(moved["path"] as? String == #"D:\Shows\Example Show"#)
+        let unix = try MediaFolderPath.applyingRoot("/new", to: ["path": "/old/Example Show"])
+        #expect(unix["path"] as? String == "/new/Example Show")
+        #expect(MediaFolderPath.currentRoot(rootFolderPath: nil, path: "/Example Show") == "/")
+    }
+
+    @Test
+    func rootFolderEditPreservesUnknownPathUnlessUserChoosesDestination() throws {
+        let unchanged = try MediaFolderPath.applyingRoot(nil, to: ["monitored": false])
+        #expect(unchanged["path"] == nil)
+        #expect(throws: URLError.self) {
+            try MediaFolderPath.applyingRoot("/new", to: ["monitored": false])
+        }
+    }
+
+    @Test
+    func posterURLsSupportReverseProxyPathsWithoutDuplicatingBase() {
+        let base = "https://media.example/radarr/"
+        #expect(ServerImageURL.resolve("/radarr/MediaCover/1/poster.jpg?v=2", serverURL: base)?.absoluteString == "https://media.example/radarr/MediaCover/1/poster.jpg?v=2")
+        #expect(ServerImageURL.resolve("/MediaCover/1/poster.jpg", serverURL: base)?.absoluteString == "https://media.example/radarr/MediaCover/1/poster.jpg")
+        #expect(ServerImageURL.resolve("MediaCover/1/poster.jpg", serverURL: base)?.absoluteString == "https://media.example/radarr/MediaCover/1/poster.jpg")
+        #expect(ServerImageURL.resolve("https://images.example/poster.jpg", serverURL: base)?.host == "images.example")
+        #expect(ServerImageURL.resolve("/poster.jpg", serverURL: "") == nil)
+        #expect(ServerImageURL.resolve("file:///poster.jpg", serverURL: base) == nil)
+        #expect(ServerImageURL.resolve("//other.example/poster.jpg", serverURL: base) == nil)
+    }
+
+    @Test
+    func posterAuthenticationIsLimitedToConfiguredOriginAndPath() throws {
+        let base = "https://media.example:443/radarr"
+        #expect(ServerImageURL.matchesServer(try #require(URL(string: "https://media.example/radarr/poster.jpg")), serverURL: base))
+        for candidate in [
+            "https://media.example.evil/radarr/poster.jpg",
+            "http://media.example/radarr/poster.jpg",
+            "https://media.example:444/radarr/poster.jpg",
+            "https://media.example/radarr-other/poster.jpg",
+            "https://media.example/sonarr/poster.jpg",
+            "https://media.example/radarr/../sonarr/poster.jpg"
+        ] {
+            #expect(!ServerImageURL.matchesServer(try #require(URL(string: candidate)), serverURL: base))
+        }
+    }
+
     @Test
     func credentialMigrationMovesSecretsIntoKeychainAndClearsLegacyStores() throws {
         let defaultsStore = makeDefaults(suffix: "migration")

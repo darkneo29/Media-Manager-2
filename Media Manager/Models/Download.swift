@@ -257,7 +257,7 @@ struct SabNZBHistorySlot: Decodable {
             multiplier = 1
         }
 
-        return Int64(value * multiplier)
+        return ServerMetric.byteCount(value * multiplier)
     }
 }
 
@@ -298,8 +298,9 @@ private extension KeyedDecodingContainer {
         if let value = try? decodeIfPresent(Int64.self, forKey: key) {
             return Int(value)
         }
-        if let value = try? decodeIfPresent(Double.self, forKey: key) {
-            return Int(value)
+        if let value = try? decodeIfPresent(Double.self, forKey: key),
+           let converted = Int(exactly: value.rounded(.towardZero)) {
+            return converted
         }
         if let value = try? decodeIfPresent(String.self, forKey: key),
            let intValue = Int(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
@@ -318,8 +319,9 @@ private extension KeyedDecodingContainer {
         if let value = try? decodeIfPresent(Int.self, forKey: key) {
             return Int64(value)
         }
-        if let value = try? decodeIfPresent(Double.self, forKey: key) {
-            return Int64(value)
+        if let value = try? decodeIfPresent(Double.self, forKey: key),
+           let converted = Int64(exactly: value.rounded(.towardZero)) {
+            return converted
         }
         if let value = try? decodeIfPresent(String.self, forKey: key),
            let intValue = Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
@@ -375,4 +377,12 @@ struct SabNZBWarningData: Codable {
     let type: String
     let text: String
     let time: Int
+}
+
+/// Invalid or overflowing server metrics must not trap during floating-point conversion.
+enum ServerMetric {
+    nonisolated static func byteCount(_ value: Double) -> Int64 {
+        guard value.isFinite, value >= 0 else { return 0 }
+        return Int64(exactly: value.rounded(.towardZero)) ?? 0
+    }
 }

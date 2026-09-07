@@ -10,6 +10,7 @@ final class WatchSnapshotService: NSObject {
     private let encoder = JSONEncoder()
     private var activationStarted = false
     private var isRefreshing = false
+    private var snapshotGeneration: UInt64 = 0
 
     private override init() {
         super.init()
@@ -24,12 +25,12 @@ final class WatchSnapshotService: NSObject {
         session.activate()
     }
 
-    func sync(movies: [Movie], tvShows: [TVShow], forceSend: Bool = false) {
+    func sync(movies: [Movie], tvShows: [TVShow]) {
         guard WCSession.isSupported() else { return }
         start()
 
         Task {
-            await sendSnapshot(movies: movies, tvShows: tvShows, forceSend: forceSend)
+            await sendSnapshot(movies: movies, tvShows: tvShows)
         }
     }
 
@@ -44,20 +45,21 @@ final class WatchSnapshotService: NSObject {
 
         await sendSnapshot(
             movies: LibraryStateManager.shared.movies,
-            tvShows: LibraryStateManager.shared.tvShows,
-            forceSend: true
+            tvShows: LibraryStateManager.shared.tvShows
         )
     }
 
-    private func sendSnapshot(movies: [Movie], tvShows: [TVShow], forceSend: Bool) async {
+    private func sendSnapshot(movies: [Movie], tvShows: [TVShow]) async {
+        let session = WCSession.default
+        guard session.activationState == .activated,
+              session.isPaired, session.isWatchAppInstalled else { return }
+        snapshotGeneration &+= 1
+        let generation = snapshotGeneration
         let snapshot = await makeSnapshot(movies: movies, tvShows: tvShows)
-        guard let payload = try? encoder.encode(snapshot) else { return }
+        guard generation == snapshotGeneration, !Task.isCancelled,
+              let payload = try? encoder.encode(snapshot) else { return }
 
         let context: [String: Any] = [WatchConnectivityKey.snapshot: payload]
-        let session = WCSession.default
-
-        guard session.activationState == .activated else { return }
-        guard forceSend || session.isPaired else { return }
 
         do {
             try session.updateApplicationContext(context)
@@ -77,6 +79,7 @@ final class WatchSnapshotService: NSObject {
     }
 
     private func makeSnapshot(movies: [Movie], tvShows: [TVShow]) async -> WatchDashboardSnapshot {
+        let generatedAt = Date()
         let config = ConfigurationManager.shared
         let downloads = await makeDownloadSummary()
         let services = makeServiceSummaries(
@@ -87,7 +90,7 @@ final class WatchSnapshotService: NSObject {
         )
 
         return WatchDashboardSnapshot(
-            generatedAt: Date(),
+            generatedAt: generatedAt,
             configuration: WatchConfigurationSummary(
                 radarrConfigured: config.isRadarrConfigured,
                 sonarrConfigured: config.isSonarrConfigured,

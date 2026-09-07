@@ -299,7 +299,7 @@ class SabNZBService {
 
     // MARK: - Conversion Helpers
 
-    private func convertToDownloadQueue(_ response: SabNZBQueueResponse) -> DownloadQueue {
+    func convertToDownloadQueue(_ response: SabNZBQueueResponse) -> DownloadQueue {
         let queueData = response.queue
 
         // Parse speed limit (could be empty, "0", or a number)
@@ -311,7 +311,7 @@ class SabNZBService {
         // Parse current speed in bytes/sec
         let speedBytesPerSec: Int64 = {
             if let kbps = Double(queueData.kbpersec) {
-                return Int64(kbps * 1024)
+                return ServerMetric.byteCount(kbps * 1024)
             }
             return 0
         }()
@@ -320,8 +320,8 @@ class SabNZBService {
             let progress = min(max(parseSABDouble(slot.percentage), 0), 100)
             let totalMB = parseSABDouble(slot.mb)
             let leftMB = parseSABDouble(slot.mbleft)
-            let totalBytes = Int64(totalMB * 1024 * 1024)
-            let leftBytes = Int64(leftMB * 1024 * 1024)
+            let totalBytes = ServerMetric.byteCount(totalMB * 1024 * 1024)
+            let leftBytes = ServerMetric.byteCount(leftMB * 1024 * 1024)
 
             return Download(
                 id: slot.nzo_id,
@@ -366,6 +366,7 @@ class SabNZBService {
             .replacingOccurrences(of: ",", with: "")
             .replacingOccurrences(of: "%", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return Double(normalized) ?? 0
+        guard let number = Double(normalized), number.isFinite else { return 0 }
+        return number
     }
 }
