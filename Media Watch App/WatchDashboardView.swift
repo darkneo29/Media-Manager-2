@@ -2,236 +2,205 @@ import SwiftUI
 
 struct WatchDashboardView: View {
     @StateObject private var store = WatchDashboardStore()
-
-    private var snapshot: WatchDashboardSnapshot {
-        store.snapshot
-    }
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    header
-                    librarySummary
-                    mediaActionsSection
-                    servicesSection
-                    downloadsSection
-                    upcomingSection
+            List {
+                if !store.hasSnapshot {
+                    Section {
+                        Label("Connect your iPhone", systemImage: "iphone")
+                            .font(.headline)
+                        Text("Open Media Manager on iPhone to sync your library and services.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 12)
+                Section {
+                    NavigationLink {
+                        WatchSearchView(store: store)
+                    } label: {
+                        Label("Find & Add", systemImage: "magnifyingglass")
+                            .font(.headline)
+                            .foregroundStyle(WatchTheme.accent)
+                            .padding(.vertical, 6)
+                    }
+                    NavigationLink {
+                        WatchDownloadsView(store: store)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Downloads", systemImage: "arrow.down.circle.fill")
+                            Text(store.snapshot.downloads.statusText)
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    NavigationLink {
+                        List {
+                            if store.snapshot.upcoming.isEmpty {
+                                EmptyStateRow(icon: "calendar", title: "No upcoming releases", subtitle: "Your enabled release filters on iPhone apply here too.")
+                            }
+                            ForEach(store.snapshot.upcoming) { item in
+                                UpcomingRow(item: item)
+                            }
+                        }.navigationTitle("Upcoming")
+                    } label: {
+                        Label("Upcoming", systemImage: "calendar")
+                    }
+                }
+                Section("Library") {
+                    HStack(spacing: 6) {
+                        MetricTile(value: store.hasSnapshot ? "\(store.snapshot.library.movieCount)" : "—", label: "Movies", icon: "film.fill")
+                        MetricTile(value: store.hasSnapshot ? "\(store.snapshot.library.showCount)" : "—", label: "Shows", icon: "tv.fill")
+                    }.listRowBackground(Color.clear)
+                    NavigationLink {
+                        List {
+                            ForEach(store.snapshot.services) { ServiceRow(service: $0) }
+                            Text("Configure services in the iPhone app.")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }.navigationTitle("Services")
+                    } label: {
+                        Label("Services", systemImage: "server.rack")
+                    }
+                }
+                Section {
+                    Text(store.connectionStatus).font(.caption2)
+                    if store.hasSnapshot {
+                        Text("Updated \(store.snapshot.generatedAt, style: .relative) ago")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Time since last sync")
+                    }
+                    Button(action: { store.requestRefresh() }) {
+                        Label(store.isRefreshing ? "Refreshing…" : "Refresh", systemImage: "arrow.clockwise")
+                    }.disabled(store.isRefreshing)
+                }
             }
-            .background(WatchTheme.background)
-            .navigationTitle("Dragon")
+            .navigationTitle("Media")
         }
-        .task {
-            store.activate()
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
             store.requestRefresh()
         }
     }
+}
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(WatchTheme.accent.opacity(0.18))
-                Image(systemName: "play.tv.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(WatchTheme.accent)
-            }
-            .frame(width: 32, height: 32)
+private struct WatchSearchView: View {
+    @ObservedObject var store: WatchDashboardStore
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Media Manager")
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(store.connectionStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 4)
-
-            Button {
-                store.requestRefresh()
-            } label: {
-                if store.isRefreshing {
-                    ProgressView()
-                        .controlSize(.mini)
-                } else {
-                    Image(systemName: "arrow.clockwise")
-                }
-            }
-            .buttonStyle(.bordered)
-            .clipShape(Circle())
-            .disabled(store.isRefreshing)
-            .accessibilityLabel("Refresh")
-        }
-    }
-
-    private var librarySummary: some View {
-        HStack(spacing: 6) {
-            MetricTile(value: "\(snapshot.library.movieCount)", label: "Movies", icon: "film.fill")
-            MetricTile(value: "\(snapshot.library.showCount)", label: "Shows", icon: "tv.fill")
-        }
-    }
-
-    private var mediaActionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Add", icon: "mic.fill")
-
-            Picker("Type", selection: $store.searchKind) {
-                ForEach(WatchMediaKind.allCases) { kind in
-                    Text(kind.title).tag(kind)
-                }
-            }
-            .labelsHidden()
-
-            HStack(spacing: 6) {
+    var body: some View {
+        List {
+            Section {
+                Picker("Search for", selection: $store.searchKind) {
+                    ForEach(WatchMediaKind.allCases) { Text($0.title).tag($0) }
+                }.disabled(store.isSearching || store.addingResultId != nil)
                 Button {
-                    requestVoiceSearch()
-                } label: {
-                    Label("Speak", systemImage: "mic.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(WatchTheme.accent)
-                .disabled(store.isSearching || store.addingResultId != nil)
-
-                Button {
-                    store.searchMedia(kind: store.searchKind, query: store.searchQuery)
-                } label: {
-                    if store.isSearching {
-                        ProgressView()
-                            .controlSize(.mini)
-                    } else {
-                        Image(systemName: "magnifyingglass")
+                    let kind = store.searchKind
+                    WatchVoiceInput.requestTitle { phrase in
+                        guard let phrase else { return }
+                        store.searchMedia(kind: kind, query: phrase)
                     }
-                }
-                .buttonStyle(.bordered)
-                .disabled(
-                    store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    store.isSearching ||
-                    store.addingResultId != nil
-                )
-                .accessibilityLabel("Search")
+                } label: {
+                    Label("Say a title", systemImage: "mic.fill")
+                }.tint(WatchTheme.accent)
+                    .disabled(store.isSearching || store.addingResultId != nil)
+                TextField("Type a title", text: $store.searchQuery)
+                    .submitLabel(.search)
+                    .onSubmit { search() }
+                    .disabled(store.isSearching || store.addingResultId != nil)
+                Button(action: search) {
+                    if store.isSearching { ProgressView("Searching…") }
+                    else { Label("Search", systemImage: "magnifyingglass") }
+                }.disabled(store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSearching || store.addingResultId != nil)
             }
-
-            TextField("Say or type a title", text: $store.searchQuery)
-                .textInputAutocapitalization(.words)
-                .submitLabel(.search)
-                .onSubmit {
-                    store.searchMedia(kind: store.searchKind, query: store.searchQuery)
-                }
-
             if !store.mediaActionStatus.isEmpty {
-                Text(store.mediaActionStatus)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(store.mediaActionStatus).font(.caption).foregroundStyle(.secondary)
             }
-
-            ForEach(store.searchResults) { result in
-                SearchResultRow(
-                    result: result,
-                    isAdding: store.addingResultId == result.id,
-                    isDisabled: store.addingResultId != nil || store.isSearching
-                ) {
-                    store.addMedia(result)
-                }
-            }
-        }
-        .padding(10)
-        .background(WatchTheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-
-    private func requestVoiceSearch() {
-        WatchVoiceInput.requestTitle { phrase in
-            guard let phrase else { return }
-            store.searchQuery = phrase
-            store.searchMedia(kind: store.searchKind, query: phrase)
-        }
-    }
-
-    private var servicesSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionHeader(title: "Services", icon: "server.rack")
-
-            if snapshot.services.isEmpty {
-                EmptyStateRow(
-                    icon: "iphone",
-                    title: "Open the iPhone app",
-                    subtitle: "Watch data syncs from your configured phone app."
-                )
-            } else {
-                ForEach(snapshot.services) { service in
-                    ServiceRow(service: service)
-                }
-            }
-        }
-    }
-
-    private var downloadsSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionHeader(title: "Downloads", icon: "arrow.down.circle.fill")
-
-            if !snapshot.downloads.isConfigured {
-                EmptyStateRow(
-                    icon: "gearshape",
-                    title: "SabNZB not configured",
-                    subtitle: "Set it up on iPhone to control downloads."
-                )
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(snapshot.downloads.statusText)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Text(snapshot.downloads.speedBytesPerSecond.watchFormattedBytesPerSecond)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+            Section {
+                ForEach(store.searchResults) { result in
+                    NavigationLink {
+                        WatchMediaDetailView(store: store, result: result)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(result.displayTitle).font(.headline)
+                            Text(store.isAdded(result) ? "In library" : result.subtitle)
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
-
-                        Spacer()
-
-                        Button {
-                            store.toggleDownloads()
-                        } label: {
-                            Image(systemName: snapshot.downloads.isPaused ? "play.fill" : "pause.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(snapshot.downloads.isPaused ? WatchTheme.success : WatchTheme.warning)
-                        .disabled(store.isRefreshing)
-                        .accessibilityLabel(snapshot.downloads.isPaused ? "Resume downloads" : "Pause downloads")
-                    }
-
-                    ForEach(snapshot.downloads.items) { item in
-                        DownloadRow(item: item)
                     }
                 }
-                .padding(10)
-                .background(WatchTheme.card)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-        }
+        }.navigationTitle("Find & Add")
     }
 
-    private var upcomingSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            SectionHeader(title: "Upcoming", icon: "calendar")
+    private func search() {
+        store.searchMedia(kind: store.searchKind, query: store.searchQuery)
+    }
+}
 
-            if snapshot.upcoming.isEmpty {
-                EmptyStateRow(
-                    icon: "calendar.badge.clock",
-                    title: "No upcoming releases",
-                    subtitle: snapshot.hasAnyConfiguredService ? "Refresh after your library loads on iPhone." : "Configure Radarr or Sonarr on iPhone."
-                )
-            } else {
-                ForEach(snapshot.upcoming) { item in
-                    UpcomingRow(item: item)
+private struct WatchMediaDetailView: View {
+    @ObservedObject var store: WatchDashboardStore
+    let result: WatchMediaSearchResult
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: result.kind == .movie ? "film.fill" : "tv.fill")
+                    .font(.largeTitle).foregroundStyle(WatchTheme.accent)
+                Text(result.displayTitle).font(.title3.bold())
+                Text(result.subtitle).font(.caption).foregroundStyle(.secondary)
+                Button { store.addMedia(result) } label: {
+                    if store.addingResultId == result.id { ProgressView("Adding…") }
+                    else { Label(store.isAdded(result) ? "In library" : "Add to library", systemImage: store.isAdded(result) ? "checkmark" : "plus") }
                 }
+                .buttonStyle(.borderedProminent).tint(WatchTheme.success)
+                .disabled(store.isAdded(result) || store.addingResultId != nil || store.isSearching)
+                if !store.mediaActionStatus.isEmpty {
+                    Text(store.mediaActionStatus).font(.caption)
+                }
+                Text("Uses your saved add settings on iPhone, including automatic search.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                if let overview = result.overview, !overview.isEmpty {
+                    Text(overview).font(.body)
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
+        }.navigationTitle(result.kind.title)
+    }
+}
+
+private struct WatchDownloadsView: View {
+    @ObservedObject var store: WatchDashboardStore
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        List {
+            if !store.snapshot.downloads.isConfigured {
+                EmptyStateRow(icon: "iphone", title: "Set up SABnzbd", subtitle: "Configure downloads in Media Manager on iPhone.")
+            } else {
+                Section {
+                    Text(store.snapshot.downloads.statusText).font(.headline)
+                    Text(store.snapshot.downloads.speedBytesPerSecond.watchFormattedBytesPerSecond)
+                        .font(.caption).foregroundStyle(.secondary)
+                    Button(action: store.toggleDownloads) {
+                        Label(store.isControllingDownloads ? "Updating…" : (store.snapshot.downloads.isPaused ? "Resume queue" : "Pause queue"), systemImage: store.snapshot.downloads.isPaused ? "play.fill" : "pause.fill")
+                    }.disabled(store.isControllingDownloads || store.snapshot.downloads.errorMessage != nil)
+                    if !store.downloadActionStatus.isEmpty {
+                        Text(store.downloadActionStatus).font(.caption)
+                    }
+                }
+                Section("Queue") {
+                    if store.snapshot.downloads.items.isEmpty && store.snapshot.downloads.errorMessage == nil {
+                        Text("No downloads queued").font(.caption).foregroundStyle(.secondary)
+                    }
+                    ForEach(store.snapshot.downloads.items) { DownloadRow(item: $0) }
+                }
+            }
+            Button("Refresh", action: { store.requestRefresh() }).disabled(store.isRefreshing)
+        }
+        .navigationTitle("Downloads")
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            store.requestRefresh()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                guard store.snapshot.downloads.isConfigured else { continue }
+                store.requestRefresh(queueWhenUnreachable: false)
             }
         }
     }
@@ -314,60 +283,6 @@ private struct ServiceRow: View {
     }
 }
 
-private struct SearchResultRow: View {
-    var result: WatchMediaSearchResult
-    var isAdding: Bool
-    var isDisabled: Bool
-    var add: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: result.kind == .movie ? "film.fill" : "tv.fill")
-                    .font(.caption)
-                    .foregroundStyle(WatchTheme.accent)
-                    .frame(width: 16)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(result.displayTitle)
-                        .font(.caption.weight(.semibold))
-                        .lineLimit(2)
-                    Text(result.subtitle)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            if let overview = result.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Button {
-                add()
-            } label: {
-                if isAdding {
-                    ProgressView()
-                        .controlSize(.mini)
-                } else {
-                    Label("Add", systemImage: "plus")
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(WatchTheme.success)
-            .disabled(isDisabled)
-        }
-        .padding(8)
-        .background(Color.black.opacity(0.18))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
 private struct DownloadRow: View {
     var item: WatchDownloadItem
 
@@ -376,9 +291,9 @@ private struct DownloadRow: View {
             HStack {
                 Text(item.name)
                     .font(.caption.weight(.semibold))
-                    .lineLimit(1)
+                    .lineLimit(2)
                 Spacer(minLength: 4)
-                Text("\(Int(item.progress))%")
+                Text("\(Int(item.progressFraction * 100))%")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()

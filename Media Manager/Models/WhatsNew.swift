@@ -35,6 +35,37 @@ enum WhatsNewCatalog {
     // Keep the newest release first so Settings can summarize the latest changes.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            id: "2026-09-07-version-2.10",
+            title: "Version 2.10",
+            subtitle: "A refreshed Apple Watch experience",
+            entries: [
+                WhatsNewEntry(
+                    id: "watch-focused-navigation",
+                    kind: .improvement,
+                    title: "Simpler Watch Navigation",
+                    description: "Open Find & Add, Downloads, Upcoming, and Services from a focused home screen, with clearer guidance when connecting your iPhone for the first time."
+                ),
+                WhatsNewEntry(
+                    id: "watch-media-details",
+                    kind: .improvement,
+                    title: "Review Before Adding",
+                    description: "Search by voice or text, open a title to read its details, and add it using your saved iPhone settings. Added titles stay marked In library."
+                ),
+                WhatsNewEntry(
+                    id: "watch-download-controls",
+                    kind: .improvement,
+                    title: "Better Watch Downloads",
+                    description: "The download queue refreshes automatically while visible, with explicit pause and resume controls and feedback when a change cannot be confirmed."
+                ),
+                WhatsNewEntry(
+                    id: "watch-connection-recovery",
+                    kind: .fix,
+                    title: "Clearer Connection Feedback",
+                    description: "Initial sync waits for the iPhone connection, pending offline refreshes are reused, and unanswered searches and adds show recovery guidance."
+                )
+            ]
+        ),
+        WhatsNewRelease(
             id: "2026-09-05-version-2.8",
             title: "Version 2.8",
             subtitle: "Automatic download updates and a faster library",

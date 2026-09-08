@@ -245,6 +245,8 @@ final class WatchSnapshotService: NSObject {
 
     private func handle(command: String) async {
         switch command {
+        case WatchConnectivityCommand.refreshDownloads:
+            await refreshFromCurrentState(forceLibraryRefresh: false)
         case WatchConnectivityCommand.refreshSnapshot:
             await refreshFromCurrentState(forceLibraryRefresh: true)
         case WatchConnectivityCommand.toggleDownloads:
@@ -256,6 +258,20 @@ final class WatchSnapshotService: NSObject {
     }
 
     private func reply(for message: [String: Any]) async -> [String: Any] {
+        if message[WatchConnectivityKey.command] as? String == WatchConnectivityCommand.setDownloadsPaused {
+            guard let paused = message[WatchConnectivityKey.paused] as? Bool,
+                  ConfigurationManager.shared.isSabNZBConfigured else {
+                return [WatchConnectivityKey.error: "Configure SABnzbd on iPhone first."]
+            }
+            do {
+                if paused { try await SabNZBService.shared.pauseQueue() }
+                else { try await SabNZBService.shared.resumeQueue() }
+                Task { await self.refreshFromCurrentState() }
+                return [WatchConnectivityKey.success: true]
+            } catch {
+                return [WatchConnectivityKey.error: "Could not update the queue. Try again on iPhone."]
+            }
+        }
         guard let command = message[WatchConnectivityKey.command] as? String,
               let payload = message[WatchConnectivityKey.payload] as? Data else {
             return [:]
@@ -312,7 +328,8 @@ final class WatchSnapshotService: NSObject {
                             overview: movie.overview,
                             runtime: movie.runtime,
                             seasonCount: nil,
-                            network: nil
+                            network: nil,
+                            isInLibrary: (movie.radarrId ?? 0) > 0 || LibraryStateManager.shared.movies.contains { $0.tmdbId == movie.tmdbId }
                         )
                     },
                     errorMessage: nil
@@ -339,7 +356,8 @@ final class WatchSnapshotService: NSObject {
                             overview: show.overview,
                             runtime: nil,
                             seasonCount: show.seasonCount,
-                            network: show.network
+                            network: show.network,
+                            isInLibrary: LibraryStateManager.shared.tvShows.contains { $0.tvdbId == show.tvdbId }
                         )
                     },
                     errorMessage: nil
@@ -387,7 +405,7 @@ final class WatchSnapshotService: NSObject {
                 )
 
                 LibraryStateManager.shared.addMovieLocally(addedMovie)
-                await refreshFromCurrentState(forceLibraryRefresh: false)
+                Task { await self.refreshFromCurrentState(forceLibraryRefresh: false) }
                 let searchStatus = preferences.searchForMovie ? " and started searching" : ""
                 return WatchMediaAddResponse(
                     requestId: request.id,
@@ -433,7 +451,7 @@ final class WatchSnapshotService: NSObject {
                 )
 
                 LibraryStateManager.shared.addShowLocally(addedShow)
-                await refreshFromCurrentState(forceLibraryRefresh: false)
+                Task { await self.refreshFromCurrentState(forceLibraryRefresh: false) }
                 let searchStatus = preferences.searchForMissingEpisodes ? " and started searching" : ""
                 return WatchMediaAddResponse(
                     requestId: request.id,

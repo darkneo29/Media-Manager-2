@@ -1,13 +1,30 @@
 import Foundation
 import Combine
 import WatchConnectivity
+import WatchKit
 
 @MainActor
 final class WatchDashboardStore: NSObject, ObservableObject {
     @Published private(set) var snapshot: WatchDashboardSnapshot = .empty
     @Published private(set) var connectionStatus = "Waiting for iPhone"
     @Published private(set) var isRefreshing = false
-    @Published var searchKind: WatchMediaKind = .movie
+    @Published var searchKind: WatchMediaKind = .movie {
+        didSet {
+            if oldValue != searchKind { searchResults = []; mediaActionStatus = "" }
+        }
+    }
+    @Published private(set) var addedResultIds: Set<String> = []
+    @Published private(set) var isControllingDownloads = false
+    @Published private(set) var downloadActionStatus = ""
+    private var pendingRefresh = false
+    private var activeSearchId: UUID?
+    private var activeAddId: UUID?
+    private var controlId: UUID?
+
+    var hasSnapshot: Bool { snapshot.generatedAt > .distantPast }
+    func isAdded(_ result: WatchMediaSearchResult) -> Bool {
+        result.isInLibrary == true || addedResultIds.contains(result.id)
+    }
     @Published var searchQuery = ""
     @Published private(set) var searchResults: [WatchMediaSearchResult] = []
     @Published private(set) var mediaActionStatus = ""
@@ -34,15 +51,51 @@ final class WatchDashboardStore: NSObject, ObservableObject {
         session.activate()
     }
 
-    func requestRefresh() {
-        send(command: WatchConnectivityCommand.refreshSnapshot)
+    func requestRefresh(queueWhenUnreachable: Bool = true) {
+        guard !isRefreshing else { return }
+        send(command: queueWhenUnreachable ? WatchConnectivityCommand.refreshSnapshot : WatchConnectivityCommand.refreshDownloads, queueWhenUnreachable: queueWhenUnreachable)
     }
 
     func toggleDownloads() {
-        send(
-            command: WatchConnectivityCommand.toggleDownloads,
-            queueWhenUnreachable: false
-        )
+        guard !isControllingDownloads, snapshot.downloads.isConfigured,
+              snapshot.downloads.errorMessage == nil else { return }
+        activate()
+        guard WCSession.isSupported(), WCSession.default.activationState == .activated,
+              WCSession.default.isReachable else {
+            downloadActionStatus = "Open the iPhone app to control downloads."
+            return
+        }
+        let id = UUID()
+        controlId = id
+        isControllingDownloads = true
+        downloadActionStatus = ""
+        WCSession.default.sendMessage([
+            WatchConnectivityKey.command: WatchConnectivityCommand.setDownloadsPaused,
+            WatchConnectivityKey.paused: !snapshot.downloads.isPaused
+        ]) { [weak self] reply in
+            Task { @MainActor in
+                guard let self, self.controlId == id else { return }
+                self.controlId = nil
+                self.isControllingDownloads = false
+                self.downloadActionStatus = reply[WatchConnectivityKey.error] as? String ??
+                    (reply[WatchConnectivityKey.success] as? Bool == true ? "Queue updated." : "Could not confirm the change. Update the iPhone app and refresh.")
+                self.requestRefresh()
+            }
+        } errorHandler: { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.controlId == id else { return }
+                self.controlId = nil
+                self.isControllingDownloads = false
+                self.downloadActionStatus = "Could not confirm the change. Refresh to check the queue."
+            }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, self.controlId == id else { return }
+            self.controlId = nil
+            self.isControllingDownloads = false
+            self.downloadActionStatus = "No reply. Refresh to check the queue."
+        }
     }
 
     func searchMedia(kind: WatchMediaKind, query: String) {
@@ -71,6 +124,8 @@ final class WatchDashboardStore: NSObject, ObservableObject {
         searchResults = []
         mediaActionStatus = "Searching \(kind.title.lowercased())s..."
         isSearching = true
+        activeSearchId = request.id
+        scheduleMediaTimeout(id: request.id, isAdd: false)
 
         let message: [String: Any] = [
             WatchConnectivityKey.command: WatchConnectivityCommand.searchMedia,
@@ -83,6 +138,8 @@ final class WatchDashboardStore: NSObject, ObservableObject {
             }
         } errorHandler: { [weak self] error in
             Task { @MainActor in
+                guard self?.activeSearchId == request.id else { return }
+                self?.activeSearchId = nil
                 self?.isSearching = false
                 self?.mediaActionStatus = "Search failed: \(error.localizedDescription)"
             }
@@ -90,7 +147,7 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     }
 
     func addMedia(_ result: WatchMediaSearchResult) {
-        guard addingResultId == nil, !isSearching else { return }
+        guard addingResultId == nil, !isSearching, !isAdded(result) else { return }
 
         activate()
         guard WCSession.isSupported(), WCSession.default.isReachable else {
@@ -105,6 +162,8 @@ final class WatchDashboardStore: NSObject, ObservableObject {
         }
 
         addingResultId = result.id
+        activeAddId = request.id
+        scheduleMediaTimeout(id: request.id, isAdd: true)
         mediaActionStatus = "Adding \(result.title)..."
 
         let message: [String: Any] = [
@@ -118,8 +177,10 @@ final class WatchDashboardStore: NSObject, ObservableObject {
             }
         } errorHandler: { [weak self] error in
             Task { @MainActor in
+                guard self?.activeAddId == request.id else { return }
+                self?.activeAddId = nil
                 self?.addingResultId = nil
-                self?.mediaActionStatus = "Add failed: \(error.localizedDescription)"
+                self?.mediaActionStatus = "Could not confirm the add. Check your iPhone library before retrying."
             }
         }
     }
@@ -131,6 +192,11 @@ final class WatchDashboardStore: NSObject, ObservableObject {
             return
         }
 
+        guard WCSession.default.activationState == .activated else {
+            pendingRefresh = true
+            connectionStatus = "Connecting to iPhone…"
+            return
+        }
         refreshRequestGeneration += 1
         let requestGeneration = refreshRequestGeneration
         isRefreshing = true
@@ -147,7 +213,9 @@ final class WatchDashboardStore: NSObject, ObservableObject {
             }
             stopRefreshIndicatorAfterTimeout(for: requestGeneration)
         } else if queueWhenUnreachable {
-            session.transferUserInfo(message)
+            if !session.outstandingUserInfoTransfers.contains(where: {
+                $0.userInfo[WatchConnectivityKey.command] as? String == command
+            }) { session.transferUserInfo(message) }
             connectionStatus = "Queued for iPhone"
             Task {
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
@@ -167,10 +235,13 @@ final class WatchDashboardStore: NSObject, ObservableObject {
                   self.refreshRequestGeneration == requestGeneration,
                   self.isRefreshing else { return }
             self.isRefreshing = false
+            self.connectionStatus = "No reply. Open the iPhone app to sync."
         }
     }
 
     private func handleSearchReply(_ reply: [String: Any], request: WatchMediaSearchRequest) {
+        guard activeSearchId == request.id else { return }
+        activeSearchId = nil
         isSearching = false
 
         guard let data = reply[WatchConnectivityKey.payload] as? Data,
@@ -191,19 +262,40 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     }
 
     private func handleAddReply(_ reply: [String: Any], request: WatchMediaAddRequest) {
+        guard activeAddId == request.id else { return }
+        activeAddId = nil
         addingResultId = nil
 
         guard let data = reply[WatchConnectivityKey.payload] as? Data,
               let response = try? decoder.decode(WatchMediaAddResponse.self, from: data),
-              response.requestId == request.id else {
+              response.requestId == request.id, response.resultId == request.result.id else {
             mediaActionStatus = "Add response was invalid."
             return
         }
 
         mediaActionStatus = response.message
         if response.success {
-            searchResults.removeAll { $0.id == response.resultId }
+            addedResultIds.insert(response.resultId)
+            WKInterfaceDevice.current().play(.success)
             requestRefresh()
+        }
+    }
+
+    private func scheduleMediaTimeout(id: UUID, isAdd: Bool) {
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(45))
+            guard let self else { return }
+            if isAdd {
+                guard self.activeAddId == id else { return }
+                self.activeAddId = nil
+                self.addingResultId = nil
+                self.mediaActionStatus = "No reply. Check your iPhone library before trying to add again."
+            } else {
+                guard self.activeSearchId == id else { return }
+                self.activeSearchId = nil
+                self.isSearching = false
+                self.mediaActionStatus = "Search timed out. Open the iPhone app and try again."
+            }
         }
     }
 
@@ -264,14 +356,21 @@ extension WatchDashboardStore: WCSessionDelegate {
             if let error {
                 self.connectionStatus = error.localizedDescription
             } else if activationState == .activated {
-                self.connectionStatus = session.isReachable ? "Connected" : self.connectionStatus
+                if let data = session.receivedApplicationContext[WatchConnectivityKey.snapshot] as? Data {
+                    self.applySnapshotData(data)
+                }
+                if self.pendingRefresh {
+                    self.pendingRefresh = false
+                    self.requestRefresh()
+                }
             }
         }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
-            self.connectionStatus = session.isReachable ? "Connected" : "Waiting for iPhone"
+            self.connectionStatus = session.isReachable ? "Connected" : "iPhone unavailable • showing saved data"
+            if session.isReachable { self.requestRefresh() }
         }
     }
 

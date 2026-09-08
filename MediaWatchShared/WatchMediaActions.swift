@@ -1,13 +1,18 @@
 import Foundation
 
 enum WatchConnectivityKey {
+    nonisolated static let success = "success"
+    nonisolated static let paused = "paused"
+    nonisolated static let error = "error"
     nonisolated static let command = "command"
     nonisolated static let payload = "payload"
     nonisolated static let snapshot = "snapshot"
 }
 
 enum WatchConnectivityCommand {
+    nonisolated static let setDownloadsPaused = "setDownloadsPaused"
     nonisolated static let addMedia = "addMedia"
+    nonisolated static let refreshDownloads = "refreshDownloads"
     nonisolated static let refreshSnapshot = "refreshSnapshot"
     nonisolated static let searchMedia = "searchMedia"
     nonisolated static let toggleDownloads = "toggleDownloads"
@@ -78,6 +83,7 @@ struct WatchMediaSearchResult: Codable, Equatable, Identifiable {
     var runtime: Int?
     var seasonCount: Int?
     var network: String?
+    var isInLibrary: Bool? = nil
 
     var id: String {
         "\(kind.rawValue)-\(remoteId)"
