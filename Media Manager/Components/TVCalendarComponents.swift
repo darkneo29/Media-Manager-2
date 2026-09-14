@@ -25,7 +25,8 @@ struct TVCalendarDayCell: View {
     let tvShowCount: Int
     let onTap: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var dayNumber: String {
         "\(sharedCalendar.component(.day, from: date))"
@@ -71,15 +72,20 @@ struct TVCalendarDayCell: View {
                 RoundedRectangle(cornerRadius: AppRadius.md)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 3)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
         .opacity(isCurrentMonth ? 1.0 : 0.3)
+        .accessibilityLabel(date.formatted(date: .complete, time: .omitted))
+        .accessibilityValue("\(movieCount) movie releases, \(tvShowCount) TV episodes")
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 
     private var dayTextColor: Color {
@@ -116,7 +122,8 @@ struct TVCalendarEventCard: View {
     var isFollowed: Bool = false
     let onTap: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var typeColor: Color {
         switch event.type {
@@ -196,14 +203,16 @@ struct TVCalendarEventCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : typeColor.opacity(0.3), lineWidth: isFocused ? 4 : 1)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 

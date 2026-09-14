@@ -15,9 +15,9 @@ struct ReleaseRadarFilterBar: View {
                     } label: {
                         HStack(spacing: AppSpacing.xs) {
                             Image(systemName: filter.icon)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: TVSizing.isTV ? 22 : 12, weight: .semibold))
                             Text(filter.shortTitle)
-                                .font(AppTypography.caption1(.semibold))
+                                .font(TVSizing.isTV ? .system(size: 22, weight: .semibold) : AppTypography.caption1(.semibold))
                         }
                         .foregroundColor(isEnabled ? .white : ColorPalette.textSecondaryDark)
                         .padding(.horizontal, AppSpacing.sm)
@@ -34,7 +34,8 @@ struct ReleaseRadarFilterBar: View {
                                 )
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TVPosterButtonStyle())
+                    .accessibilityValue(isEnabled ? "Enabled" : "Disabled")
                 }
             }
             .padding(.horizontal, AppSpacing.md)

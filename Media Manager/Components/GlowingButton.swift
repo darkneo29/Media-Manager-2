@@ -68,15 +68,15 @@ struct GlowingButton: View {
             HStack(spacing: 8) {
                 if let icon = icon {
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: TVSizing.isTV ? 27 : 16, weight: .semibold))
                 }
 
                 Text(title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: TVSizing.isTV ? 27 : 16, weight: .semibold))
             }
             .foregroundColor(variant.foregroundColor)
             .padding(.horizontal, 24)
-            .padding(.vertical, 14)
+            .padding(.vertical, TVSizing.isTV ? 20 : 14)
             .frame(maxWidth: .infinity)
             .background(variant.backgroundColor)
             .cornerRadius(12)

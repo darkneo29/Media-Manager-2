@@ -220,6 +220,14 @@ struct TVShowDetailView: View {
                                 }
                             }
 
+                            Button {
+                                showingEditSheet = true
+                            } label: {
+                                Label("Edit Show", systemImage: "pencil")
+                            }
+                            .buttonStyle(TVInterfaceButtonStyle())
+                            .accessibilityIdentifier("tvEditDetails")
+
                             // Overview
                             Text(show.overview ?? "No overview available.")
                                 .font(AppTypography.body())
@@ -647,7 +655,7 @@ struct TVShowDetailView: View {
         } message: {
             Text("Choose whether to keep files on disk or delete them.")
         }
-        .sheet(isPresented: $showingEditSheet, onDismiss: {
+        .mediaReviewSheet(isPresented: $showingEditSheet, onDismiss: {
             refreshShow()
         }) {
             EditTVShowView(show: show)

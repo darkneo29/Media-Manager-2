@@ -73,6 +73,11 @@ struct EditMovieView: View {
                                         .scaleEffect(0.8)
                                         .tint(ColorPalette.secondary)
                                 } else {
+                                    #if os(tvOS)
+                                    TVSelectionMenu(title: "Quality Profile", selection: $selectedQualityProfileId, options: qualityProfiles.map(\.id)) { value in
+                                        qualityProfiles.first { $0.id == value }?.name ?? "Choose profile"
+                                    }
+                                    #else
                                     Picker("Quality Profile", selection: $selectedQualityProfileId) {
                                         ForEach(qualityProfiles) { profile in
                                             Text(profile.name).tag(profile.id)
@@ -80,6 +85,7 @@ struct EditMovieView: View {
                                     }
                                     .pickerStyle(.menu)
                                     .tint(ColorPalette.secondary)
+                                    #endif
                                 }
                             }
                             .padding(.vertical, AppSpacing.sm)
@@ -103,6 +109,12 @@ struct EditMovieView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVSelectionMenu(title: "Minimum Availability", selection: $selectedMinimumAvailability, options: RadarrMinimumAvailability.allCases) { value in
+                                    value.displayName
+                                }
+                                .disabled(isLoadingOptions)
+                                #else
                                 Picker("Minimum Availability", selection: $selectedMinimumAvailability) {
                                     ForEach(RadarrMinimumAvailability.allCases) { availability in
                                         Text(availability.displayName).tag(availability)
@@ -111,6 +123,7 @@ struct EditMovieView: View {
                                 .pickerStyle(.menu)
                                 .tint(ColorPalette.secondary)
                                 .disabled(isLoadingOptions)
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)
@@ -140,6 +153,11 @@ struct EditMovieView: View {
                                         .font(AppTypography.body())
                                         .foregroundColor(ColorPalette.textPrimaryDark)
                                     Spacer()
+                                    #if os(tvOS)
+                                    TVSelectionMenu(title: "Root Folder", selection: $selectedRootFolderPath, options: Array(Set(rootFolders.map(\.path) + [selectedRootFolderPath])).sorted()) { value in
+                                        rootFolders.first { $0.path == value }?.folderName ?? (value.isEmpty ? "Keep current folder" : value)
+                                    }
+                                    #else
                                     Picker("Root Folder", selection: $selectedRootFolderPath) {
                                         if !rootFolders.contains(where: { $0.path == selectedRootFolderPath }) {
                                             Text(selectedRootFolderPath.isEmpty ? "Keep current folder" : selectedRootFolderPath)
@@ -151,6 +169,7 @@ struct EditMovieView: View {
                                     }
                                     .pickerStyle(.menu)
                                     .tint(ColorPalette.secondary)
+                                    #endif
                                 }
                                 .padding(.vertical, AppSpacing.sm)
                                 .padding(.horizontal, AppSpacing.md)
@@ -162,12 +181,24 @@ struct EditMovieView: View {
                                 )
 
                                 if selectedRootFolderPath != originalRootFolderPath {
+                                    #if os(tvOS)
+                                    HStack {
+                                        Text("Move existing files").font(AppTypography.body())
+                                        Spacer()
+                                        TVBooleanButton(title: "Move existing files", isOn: $moveFiles)
+                                    }
+                                    .padding(.vertical, AppSpacing.sm)
+                                    .padding(.horizontal, AppSpacing.md)
+                                    .background(ColorPalette.cardBackgroundDark)
+                                    .cornerRadius(AppRadius.md)
+                                    #else
                                     Toggle("Move existing files", isOn: $moveFiles)
                                         .tint(ColorPalette.primary)
                                         .padding(.vertical, AppSpacing.sm)
                                         .padding(.horizontal, AppSpacing.md)
                                         .background(ColorPalette.cardBackgroundDark)
                                         .cornerRadius(AppRadius.md)
+                                    #endif
                                 }
                             }
                         }
@@ -193,9 +224,13 @@ struct EditMovieView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVBooleanButton(title: "Monitored", isOn: $monitored)
+                                #else
                                 Toggle("", isOn: $monitored)
                                     .tint(ColorPalette.primary)
                                     .labelsHidden()
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)

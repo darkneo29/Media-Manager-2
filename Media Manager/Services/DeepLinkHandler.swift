@@ -18,6 +18,14 @@ enum DeepLinkDestination: Equatable {
     case settings
 }
 
+/// Widget links contain the server's library ID, never a TMDB or TVDB ID.
+enum LibraryDeepLink {
+    static func resolve<Item: Identifiable>(_ id: Int, in items: [Item]) -> Item? where Item.ID == Int {
+        guard id > 0 else { return nil }
+        return items.first { $0.id == id }
+    }
+}
+
 /// Handles deep link parsing and navigation state
 @MainActor
 @Observable
@@ -51,11 +59,11 @@ final class DeepLinkHandler {
 
         switch host {
         case "movie":
-            if let idString = pathComponents.first, let id = Int(idString) {
+            if pathComponents.count == 1, let idString = pathComponents.first, let id = Int(idString), id > 0 {
                 pendingDestination = .movie(id: id)
             }
         case "tvshow":
-            if let idString = pathComponents.first, let id = Int(idString) {
+            if pathComponents.count == 1, let idString = pathComponents.first, let id = Int(idString), id > 0 {
                 pendingDestination = .tvShow(id: id)
             }
         case "calendar":

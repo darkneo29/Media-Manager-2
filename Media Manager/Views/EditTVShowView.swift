@@ -93,6 +93,11 @@ struct EditTVShowView: View {
                                         .scaleEffect(0.8)
                                         .tint(ColorPalette.secondary)
                                 } else {
+                                    #if os(tvOS)
+                                    TVSelectionMenu(title: "Quality Profile", selection: $selectedQualityProfileId, options: qualityProfiles.map(\.id)) { value in
+                                        qualityProfiles.first { $0.id == value }?.name ?? "Choose profile"
+                                    }
+                                    #else
                                     Picker("Quality Profile", selection: $selectedQualityProfileId) {
                                         ForEach(qualityProfiles) { profile in
                                             Text(profile.name).tag(profile.id)
@@ -100,6 +105,7 @@ struct EditTVShowView: View {
                                     }
                                     .pickerStyle(.menu)
                                     .tint(ColorPalette.secondary)
+                                    #endif
                                 }
                             }
                             .padding(.vertical, AppSpacing.sm)
@@ -123,6 +129,12 @@ struct EditTVShowView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVSelectionMenu(title: "Series Type", selection: $seriesType, options: SonarrSeriesType.allCases) { value in
+                                    value.displayName
+                                }
+                                .disabled(isLoadingOptions)
+                                #else
                                 Picker("Series Type", selection: $seriesType) {
                                     ForEach(SonarrSeriesType.allCases) { type in
                                         Text(type.displayName).tag(type)
@@ -131,6 +143,7 @@ struct EditTVShowView: View {
                                 .pickerStyle(.menu)
                                 .tint(ColorPalette.secondary)
                                 .disabled(isLoadingOptions)
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)
@@ -148,6 +161,12 @@ struct EditTVShowView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVSelectionMenu(title: "New Episodes", selection: $monitorNewItems, options: SonarrNewItemMonitor.allCases) { value in
+                                    value.displayName
+                                }
+                                .disabled(isLoadingOptions)
+                                #else
                                 Picker("New Episodes", selection: $monitorNewItems) {
                                     ForEach(SonarrNewItemMonitor.allCases) { option in
                                         Text(option.displayName).tag(option)
@@ -156,6 +175,7 @@ struct EditTVShowView: View {
                                 .pickerStyle(.menu)
                                 .tint(ColorPalette.secondary)
                                 .disabled(isLoadingOptions)
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)
@@ -185,6 +205,11 @@ struct EditTVShowView: View {
                                         .font(AppTypography.body())
                                         .foregroundColor(ColorPalette.textPrimaryDark)
                                     Spacer()
+                                    #if os(tvOS)
+                                    TVSelectionMenu(title: "Root Folder", selection: $selectedRootFolderPath, options: Array(Set(rootFolders.map(\.path) + [selectedRootFolderPath])).sorted()) { value in
+                                        rootFolders.first { $0.path == value }?.folderName ?? (value.isEmpty ? "Keep current folder" : value)
+                                    }
+                                    #else
                                     Picker("Root Folder", selection: $selectedRootFolderPath) {
                                         if !rootFolders.contains(where: { $0.path == selectedRootFolderPath }) {
                                             Text(selectedRootFolderPath.isEmpty ? "Keep current folder" : selectedRootFolderPath)
@@ -196,6 +221,7 @@ struct EditTVShowView: View {
                                     }
                                     .pickerStyle(.menu)
                                     .tint(ColorPalette.secondary)
+                                    #endif
                                 }
                                 .padding(.vertical, AppSpacing.sm)
                                 .padding(.horizontal, AppSpacing.md)
@@ -207,12 +233,24 @@ struct EditTVShowView: View {
                                 )
 
                                 if selectedRootFolderPath != originalRootFolderPath {
+                                    #if os(tvOS)
+                                    HStack {
+                                        Text("Move existing files").font(AppTypography.body())
+                                        Spacer()
+                                        TVBooleanButton(title: "Move existing files", isOn: $moveFiles)
+                                    }
+                                    .padding(.vertical, AppSpacing.sm)
+                                    .padding(.horizontal, AppSpacing.md)
+                                    .background(ColorPalette.cardBackgroundDark)
+                                    .cornerRadius(AppRadius.md)
+                                    #else
                                     Toggle("Move existing files", isOn: $moveFiles)
                                         .tint(ColorPalette.primary)
                                         .padding(.vertical, AppSpacing.sm)
                                         .padding(.horizontal, AppSpacing.md)
                                         .background(ColorPalette.cardBackgroundDark)
                                         .cornerRadius(AppRadius.md)
+                                    #endif
                                 }
                             }
                         }
@@ -238,9 +276,13 @@ struct EditTVShowView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVBooleanButton(title: "Monitored", isOn: $monitored)
+                                #else
                                 Toggle("", isOn: $monitored)
                                     .tint(ColorPalette.primary)
                                     .labelsHidden()
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)
@@ -269,9 +311,13 @@ struct EditTVShowView: View {
 
                                 Spacer()
 
+                                #if os(tvOS)
+                                TVBooleanButton(title: "Season Folder", isOn: $seasonFolder)
+                                #else
                                 Toggle("", isOn: $seasonFolder)
                                     .tint(ColorPalette.primary)
                                     .labelsHidden()
+                                #endif
                             }
                             .padding(.vertical, AppSpacing.sm)
                             .padding(.horizontal, AppSpacing.md)

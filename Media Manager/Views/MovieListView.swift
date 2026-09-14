@@ -111,7 +111,8 @@ struct MovieListView: View {
                     PlaceholderView(
                         icon: "gear",
                         title: "Radarr Not Configured",
-                        description: "Go to Settings to configure your Radarr server URL and API key"
+                        description: "Go to Settings to configure your Radarr server URL and API key",
+                        action: TVSizing.isTV ? .openSettings : nil
                     )
                 } else if libraryManager.isLoadingMovies && libraryManager.movies.isEmpty {
                     ProgressView()
@@ -153,7 +154,7 @@ struct MovieListView: View {
                         Text("No movies in library")
                             .font(isTVOS ? AppTypography.title2() : AppTypography.headline())
                             .foregroundColor(ColorPalette.textSecondaryDark)
-                        Text("Tap Add to search for movies")
+                        Text("Choose Add to search for movies")
                             .font(isTVOS ? AppTypography.body() : AppTypography.caption1())
                             .foregroundColor(ColorPalette.textMutedDark)
                     }
@@ -189,6 +190,11 @@ struct MovieListView: View {
             }
             .navigationTitle("Movies")
             .navBarTitleDisplayMode(.large)
+            #if os(tvOS)
+            .safeAreaInset(edge: .top) {
+                tvLibraryActions
+            }
+            #else
             .searchable(text: $searchText, prompt: "Search movies...")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -236,6 +242,7 @@ struct MovieListView: View {
                     .disabled(libraryManager.isLoadingMovies)
                 }
             }
+            #endif
             .navigationDestination(for: Movie.self) { movie in
                 MovieDetailView(movie: movie)
             }
@@ -287,6 +294,42 @@ struct MovieListView: View {
         }
     }
 
+
+    #if os(tvOS)
+    private var tvLibraryActions: some View {
+        HStack(spacing: 24) {
+            TVLibrarySearchButton(text: $searchText, title: "Search Movies")
+            Spacer(minLength: 24)
+            NavigationLink(destination: RadarrCollectionsView()) {
+                Label("Collections", systemImage: "rectangle.stack")
+            }
+
+            if !libraryManager.movies.isEmpty {
+                Button(isSelectionMode ? "Done" : "Select") {
+                    isSelectionMode.toggle()
+                    if !isSelectionMode { selectedMovieIds.removeAll() }
+                }
+            }
+            NavigationLink(destination: AddMovieView(navigationPath: $navigationPath)) {
+                Label("Add", systemImage: "plus")
+            }
+            .buttonStyle(TVInterfaceButtonStyle(prominent: true))
+            .disabled(!isConfigured)
+            Button {
+                Task { await libraryManager.loadMovies(forceRefresh: true) }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .accessibilityLabel("Refresh library")
+            .disabled(!isConfigured || libraryManager.isLoadingMovies)
+        }
+        .buttonStyle(TVInterfaceButtonStyle())
+        .padding(.horizontal, TVSizing.contentPadding)
+        .padding(.vertical, 24)
+        .background(ColorPalette.backgroundDark)
+    }
+    #endif
+
     @ViewBuilder
     private func selectionBadge(for movie: Movie) -> some View {
         if isSelectionMode {
@@ -306,13 +349,13 @@ struct MovieListView: View {
             Spacer()
 
             Button { runBulkMonitoring(monitored: true) } label: {
-                Image(systemName: "eye.fill")
+                Label("Monitor", systemImage: "eye.fill")
             }
             Button { runBulkMonitoring(monitored: false) } label: {
-                Image(systemName: "eye.slash.fill")
+                Label("Unmonitor", systemImage: "eye.slash.fill")
             }
             Button { runBulkSearch() } label: {
-                Image(systemName: "magnifyingglass")
+                Label("Search", systemImage: "magnifyingglass")
             }
             Menu {
                 ForEach(qualityProfiles) { profile in
@@ -321,13 +364,18 @@ struct MovieListView: View {
                     }
                 }
             } label: {
-                Image(systemName: "slider.horizontal.3")
+                Label("Quality", systemImage: "slider.horizontal.3")
             }
             .disabled(qualityProfiles.isEmpty)
             Button(role: .destructive) { showingBulkDelete = true } label: {
-                Image(systemName: "trash")
+                Label("Delete", systemImage: "trash")
             }
         }
+        #if os(tvOS)
+        .buttonStyle(TVInterfaceButtonStyle())
+        #else
+        .labelStyle(.iconOnly)
+        #endif
         .font(AppTypography.body(.semibold))
         .foregroundColor(ColorPalette.primary)
         .padding(AppSpacing.md)
@@ -349,7 +397,7 @@ struct MovieListView: View {
 
     private func handlePendingDeepLink(_ movieId: Int? = nil) {
         guard let movieId = movieId ?? deepLinkMovieId,
-              let movie = libraryManager.movies.first(where: { $0.id == movieId || $0.tmdbId == movieId }) else {
+              let movie = LibraryDeepLink.resolve(movieId, in: libraryManager.movies) else {
             return
         }
 

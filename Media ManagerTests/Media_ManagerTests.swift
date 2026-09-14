@@ -32,6 +32,40 @@ private final class TestCloudStore: KeyValueStoring {
 }
 
 struct Media_ManagerTests {
+    @Test @MainActor
+    func calendarHeadingsMatchDeviceWeekStart() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US")
+        calendar.firstWeekday = 1
+        #expect(CalendarWeekdayLabels.ordered(for: calendar) == ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
+        calendar.firstWeekday = 2
+        #expect(CalendarWeekdayLabels.ordered(for: calendar) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+        calendar.firstWeekday = 7
+        #expect(CalendarWeekdayLabels.ordered(for: calendar) == ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"])
+    }
+
+    @Test @MainActor
+    func libraryLinksNeverResolveAnOverlappingExternalID() {
+        let wrongMovie = Movie(id: 8, title: "Wrong", year: 2020, overview: nil, runtime: 0, monitored: true, status: "released", images: [], tmdbId: 42)
+        let rightMovie = Movie(id: 42, title: "Right", year: 2020, overview: nil, runtime: 0, monitored: true, status: "released", images: [], tmdbId: 100)
+        #expect(LibraryDeepLink.resolve(42, in: [wrongMovie, rightMovie])?.title == "Right")
+        #expect(LibraryDeepLink.resolve(42, in: [wrongMovie]) == nil)
+        #expect(LibraryDeepLink.resolve(0, in: [rightMovie]) == nil)
+    }
+
+    @Test @MainActor
+    func mediaLinksRejectInvalidLibraryIDsAndExtraPathSegments() {
+        let handler = DeepLinkHandler.shared
+        defer { handler.clearPendingDestination() }
+        for link in ["mediamanager://movie/0", "mediamanager://tvshow/-1", "mediamanager://movie/42/extra", "mediamanager://tvshow/abc"] {
+            handler.clearPendingDestination()
+            handler.handle(url: URL(string: link)!)
+            #expect(handler.pendingDestination == nil)
+        }
+        handler.handle(url: URL(string: "mediamanager://movie/42")!)
+        #expect(handler.pendingDestination == .movie(id: 42))
+    }
+
 
 
     @Test @MainActor

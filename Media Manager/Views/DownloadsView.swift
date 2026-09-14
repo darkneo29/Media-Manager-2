@@ -247,7 +247,8 @@ struct DownloadsView: View {
         PlaceholderView(
             icon: "gear",
             title: "\(service) Not Configured",
-            description: "Go to Settings to configure your \(service) server"
+            description: "Go to Settings to configure your \(service) server",
+            action: TVSizing.isTV ? .openSettings : nil
         )
     }
 

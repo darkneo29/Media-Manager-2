@@ -40,6 +40,7 @@ struct AddMovieView: View {
     @State private var optionsExpanded = false
     @State private var selectedMovieForConfirmation: MovieLookup?
     @State private var isLoadingOptions = true
+    @State private var hasStartedLoadingOptions = false
     @State private var optionsErrorMessage: String?
     @State private var searchForMovie: Bool = true
 
@@ -112,7 +113,7 @@ struct AddMovieView: View {
 
                 // Add options section
                 #if os(tvOS)
-                tvOSOptionsSection
+                tvOSOptionsButton
                 #else
                 addOptionsDisclosure
                 #endif
@@ -227,7 +228,10 @@ struct AddMovieView: View {
         .navigationTitle("Add Movie")
         .navBarTitleDisplayMode(.inline)
         .onAppear {
-            loadOptions()
+            if !hasStartedLoadingOptions {
+                hasStartedLoadingOptions = true
+                loadOptions()
+            }
         }
         .onDisappear {
             searchTask?.cancel()
@@ -238,12 +242,12 @@ struct AddMovieView: View {
                 navigationPath.append(movie)
             }
         }
-        .sheet(item: $selectedTMDBMovie) { movie in
+        .mediaReviewSheet(item: $selectedTMDBMovie) { movie in
             QuickAddMovieSheet(movie: movie) {
                 // Movie was added — refresh isn't needed since we'll dismiss
             }
         }
-        .sheet(item: $selectedMovieForConfirmation) { movie in
+        .mediaReviewSheet(item: $selectedMovieForConfirmation) { movie in
             AddConfirmationSheet(
                 title: movie.title,
                 year: movie.year,
@@ -503,6 +507,25 @@ struct AddMovieView: View {
     // MARK: - tvOS Options Section
 
     #if os(tvOS)
+    private var tvOSOptionsButton: some View {
+        HStack(spacing: 24) {
+            Text("Choose a title, then review your add options.")
+                .font(AppTypography.subheadline())
+                .foregroundStyle(ColorPalette.textSecondaryDark)
+            Spacer()
+            Button { optionsExpanded = true } label: {
+                Label(isLoadingOptions ? "Loading Options…" : "Add Options", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(TVInterfaceButtonStyle())
+            .disabled(isLoadingOptions)
+        }
+        .padding(.horizontal, TVSizing.contentPadding)
+        .padding(.vertical, 20)
+        .fullScreenCover(isPresented: $optionsExpanded) {
+            TVAddOptionsSheet { tvOSOptionsSection }
+        }
+    }
+
     private var tvOSOptionsSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
             // Quality profile picker
@@ -1032,7 +1055,7 @@ struct SearchResultCard: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.sm) {
                 // Poster
-                CachedAsyncImage(url: posterURL, width: 60, height: 90)
+                CachedAsyncImage(url: posterURL, width: TVSizing.isTV ? 120 : 60, height: TVSizing.isTV ? 180 : 90)
                     .cornerRadius(AppRadius.sm)
 
                 // Info
@@ -1080,7 +1103,7 @@ struct SearchResultCard: View {
                     Text("In Library")
                         .font(AppTypography.caption1(.medium))
                         .foregroundColor(ColorPalette.success)
-                        .frame(width: 86, height: 34)
+                        .frame(width: TVSizing.isTV ? 160 : 86, height: TVSizing.isTV ? 64 : 34)
                         .background(ColorPalette.success.opacity(0.15))
                         .cornerRadius(AppRadius.sm)
                 } else {
@@ -1088,12 +1111,12 @@ struct SearchResultCard: View {
                         if isAdding {
                             ProgressView()
                                 .tint(.white)
-                                .frame(width: 76, height: 34)
+                                .frame(width: TVSizing.isTV ? 120 : 76, height: TVSizing.isTV ? 64 : 34)
                         } else {
                             Text("Add")
                                 .font(AppTypography.caption1(.semibold))
                                 .foregroundColor(.white)
-                                .frame(width: 76, height: 34)
+                                .frame(width: TVSizing.isTV ? 120 : 76, height: TVSizing.isTV ? 64 : 34)
                                 .background(ColorPalette.primary)
                                 .cornerRadius(AppRadius.sm)
                         }
@@ -1151,7 +1174,7 @@ struct TMDBSearchResultCard: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.sm) {
                 // Poster
-                CachedAsyncImage(url: movie.posterURL, width: 60, height: 90)
+                CachedAsyncImage(url: movie.posterURL, width: TVSizing.isTV ? 120 : 60, height: TVSizing.isTV ? 180 : 90)
                     .cornerRadius(AppRadius.sm)
 
                 // Info
@@ -1206,7 +1229,7 @@ struct TMDBSearchResultCard: View {
                     Text("Add")
                         .font(AppTypography.caption1(.semibold))
                         .foregroundColor(.white)
-                        .frame(width: 76, height: 34)
+                        .frame(width: TVSizing.isTV ? 120 : 76, height: TVSizing.isTV ? 64 : 34)
                         .background(ColorPalette.primary)
                         .cornerRadius(AppRadius.sm)
                 }
@@ -1257,52 +1280,55 @@ struct TVAddMoviePickerRow: View {
     let onTap: () -> Void
 
     @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: AppSpacing.lg) {
-            Text(title)
-                .font(.system(size: 28, weight: .semibold))
-                .foregroundColor(.white)
+        Button { onTap() } label: {
+            HStack(spacing: AppSpacing.lg) {
+                Text(title)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(.white)
 
-            Spacer()
+                Spacer()
 
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(1.2)
-                    .tint(ColorPalette.secondary)
-            } else {
-                HStack(spacing: AppSpacing.sm) {
-                    Text(selectedLabel)
-                        .font(.system(size: 24))
-                        .foregroundColor(ColorPalette.secondary)
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                        .tint(ColorPalette.secondary)
+                } else {
+                    HStack(spacing: AppSpacing.sm) {
+                        Text(selectedLabel)
+                            .font(.system(size: 24))
+                            .foregroundColor(ColorPalette.secondary)
 
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 20))
-                        .foregroundColor(Color.white.opacity(0.6))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 20))
+                            .foregroundColor(Color.white.opacity(0.6))
+                    }
                 }
             }
+            .padding(.horizontal, AppSpacing.xl)
+            .padding(.vertical, AppSpacing.lg)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
+            )
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
+            .shadow(
+                color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
+                radius: isFocused ? TVSizing.focusShadowRadius : 0
+            )
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
-        .padding(.horizontal, AppSpacing.xl)
-        .padding(.vertical, AppSpacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.lg)
-                .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.lg)
-                .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
-        )
-        .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
-        .shadow(
-            color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
-            radius: isFocused ? TVSizing.focusShadowRadius : 0
-        )
-        .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
-        .focusable()
+        .buttonStyle(.plain)
         .focused($isFocused)
-        .onTapGesture {
-            onTap()
-        }
+        .focusEffectDisabled()
+        .accessibilityLabel(title)
+        .accessibilityValue(selectedLabel)
         .disabled(isLoading)
     }
 }
@@ -1313,55 +1339,58 @@ struct TVAddMovieToggleRow: View {
     @Binding var isOn: Bool
 
     @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: AppSpacing.lg) {
-            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                Text(title)
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundColor(.white)
+        Button { isOn.toggle() } label: {
+            HStack(spacing: AppSpacing.lg) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Text(title)
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundColor(.white)
 
-                Text(subtitle)
-                    .font(.system(size: 22))
-                    .foregroundColor(Color.white.opacity(0.7))
+                    Text(subtitle)
+                        .font(.system(size: 22))
+                        .foregroundColor(Color.white.opacity(0.7))
+                }
+
+                Spacer()
+
+                // Toggle indicator
+                ZStack {
+                    Capsule()
+                        .fill(isOn ? ColorPalette.secondary : Color.gray.opacity(0.3))
+                        .frame(width: 70, height: 40)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 32, height: 32)
+                        .offset(x: isOn ? 14 : -14)
+                        .animation(.easeInOut(duration: 0.2), value: isOn)
+                }
             }
-
-            Spacer()
-
-            // Toggle indicator
-            ZStack {
-                Capsule()
-                    .fill(isOn ? ColorPalette.secondary : Color.gray.opacity(0.3))
-                    .frame(width: 70, height: 40)
-
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 32, height: 32)
-                    .offset(x: isOn ? 14 : -14)
-                    .animation(.easeInOut(duration: 0.2), value: isOn)
-            }
+            .padding(.horizontal, AppSpacing.xl)
+            .padding(.vertical, AppSpacing.lg)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.lg)
+                    .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
+            )
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
+            .shadow(
+                color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
+                radius: isFocused ? TVSizing.focusShadowRadius : 0
+            )
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
-        .padding(.horizontal, AppSpacing.xl)
-        .padding(.vertical, AppSpacing.lg)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.lg)
-                .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.lg)
-                .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
-        )
-        .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
-        .shadow(
-            color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
-            radius: isFocused ? TVSizing.focusShadowRadius : 0
-        )
-        .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
-        .focusable()
+        .buttonStyle(.plain)
         .focused($isFocused)
-        .onTapGesture {
-            isOn.toggle()
-        }
+        .focusEffectDisabled()
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "On" : "Off")
     }
 }
 #endif

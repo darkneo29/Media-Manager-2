@@ -52,7 +52,7 @@ struct DockerContainerCard: View {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textSecondaryDark))
                         .scaleEffect(0.7)
-                        .frame(width: 32, height: 32)
+                        .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                 } else {
                     // Restart Button
                     ActionButton(
@@ -171,9 +171,9 @@ private struct ActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: TVSizing.isTV ? 26 : 14, weight: .medium))
                 .foregroundColor(isEnabled ? color : ColorPalette.textDisabledDark)
-                .frame(width: 32, height: 32)
+                .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                 .background(ColorPalette.surfaceDark)
                 .cornerRadius(8)
         }

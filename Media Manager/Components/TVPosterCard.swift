@@ -18,7 +18,8 @@ struct TVPosterCard: View {
     var statusColor: Color? = nil
     let onTap: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onTap) {
@@ -31,6 +32,7 @@ struct TVPosterCard: View {
             }
         }
         .buttonStyle(TVPosterButtonStyle())
+        .focused($isFocused)
     }
 
     private var posterView: some View {
@@ -94,13 +96,14 @@ struct TVPosterCard: View {
     private var textContent: some View {
         VStack(alignment: .leading, spacing: TVSizing.isTV ? 4 : 2) {
             Text(title)
-                .font(TVSizing.isTV ? AppTypography.body(.medium) : AppTypography.caption1(.medium))
+                .font(TVSizing.isTV ? .system(size: 28, weight: .medium) : AppTypography.caption1(.medium))
                 .foregroundColor(ColorPalette.textPrimaryDark)
                 .lineLimit(TVSizing.isTV ? 2 : 1)
+                .frame(height: TVSizing.isTV ? 72 : nil, alignment: .topLeading)
 
             if let subtitle = subtitle {
                 Text(subtitle)
-                    .font(TVSizing.isTV ? AppTypography.subheadline() : AppTypography.caption2())
+                    .font(TVSizing.isTV ? .system(size: 22) : AppTypography.caption2())
                     .foregroundColor(ColorPalette.textMutedDark)
                     .lineLimit(1)
             }
@@ -113,18 +116,19 @@ struct TVPosterCard: View {
 /// Optimized for tvOS performance with reduced shadow complexity and longer animations
 struct TVPosterButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             #if os(tvOS)
-            .scaleEffect(isFocused ? TVSizing.focusScale : (configuration.isPressed ? 0.95 : 1.0))
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : (configuration.isPressed ? 0.95 : 1.0)))
             .shadow(
                 color: isFocused ? ColorPalette.primary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0,
                 x: 0,
                 y: isFocused ? 6 : 0  // Reduced y-offset for simpler shadow
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
             #else
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             .opacity(configuration.isPressed ? 0.9 : 1.0)

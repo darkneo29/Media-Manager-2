@@ -12,7 +12,8 @@ struct TVTextFieldCard: View {
     var icon: String = "text.cursor"
     var isSecure: Bool = false
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showingInputSheet = false
     @State private var tempText = ""
 
@@ -62,19 +63,25 @@ struct TVTextFieldCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
         .alert(label, isPresented: $showingInputSheet) {
             if isSecure {
                 SecureField(placeholder, text: $tempText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             } else {
                 TextField(placeholder, text: $tempText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
             }
             Button("Cancel", role: .cancel) {
                 tempText = ""
@@ -99,7 +106,8 @@ struct TVActionButton: View {
     var isLoading: Bool = false
     let action: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -127,14 +135,16 @@ struct TVActionButton: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? Color.white.opacity(0.5) : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? color.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
         .disabled(isLoading)
     }
 }
@@ -206,7 +216,8 @@ struct TVActionCard: View {
     let subtitle: String
     let action: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -244,14 +255,16 @@ struct TVActionCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 
@@ -598,7 +611,8 @@ struct TVBackupCard: View {
     let backup: ServerBackup
     let onRestore: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: onRestore) {
@@ -647,14 +661,16 @@ struct TVBackupCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 
     private func formatDate(_ dateString: String) -> String {
@@ -679,7 +695,8 @@ struct TVToggleCard: View {
     let subtitle: String
     @Binding var isOn: Bool
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
@@ -721,14 +738,16 @@ struct TVToggleCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 
@@ -740,14 +759,15 @@ struct TVPickerCard: View {
     @Binding var selection: String
     let options: [(value: String, label: String)]
 
-    @Environment(\.isFocused) private var isFocused
-    @State private var currentIndex: Int = 0
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button {
             // Cycle through options
-            currentIndex = (currentIndex + 1) % options.count
-            selection = options[currentIndex].value
+            guard !options.isEmpty else { return }
+            let currentIndex = options.firstIndex { $0.value == selection } ?? -1
+            selection = options[(currentIndex + 1) % options.count].value
         } label: {
             HStack(spacing: AppSpacing.lg) {
                 Text(title)
@@ -776,25 +796,19 @@ struct TVPickerCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
-        .onAppear {
-            // Set initial index based on selection
-            if let index = options.firstIndex(where: { $0.value == selection }) {
-                currentIndex = index
-            }
-        }
-        .onChange(of: selection) { _, newValue in
-            if let index = options.firstIndex(where: { $0.value == newValue }) {
-                currentIndex = index
-            }
-        }
+        .focused($isFocused)
+        .focusEffectDisabled()
+        .disabled(options.isEmpty)
+        .accessibilityLabel(title)
+        .accessibilityValue(currentLabel)
     }
 
     private var currentLabel: String {

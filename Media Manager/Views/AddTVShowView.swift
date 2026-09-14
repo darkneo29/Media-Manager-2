@@ -25,6 +25,7 @@ struct AddTVShowView: View {
     @State private var optionsExpanded = false
     @State private var selectedShowForConfirmation: TVShowLookup?
     @State private var isLoadingOptions = true
+    @State private var hasStartedLoadingOptions = false
     @State private var optionsErrorMessage: String?
 
     // Debouncing support
@@ -59,7 +60,10 @@ struct AddTVShowView: View {
         .toolbar(.hidden, for: .tabBar)
         #endif
         .onAppear {
-            loadOptions()
+            if !hasStartedLoadingOptions {
+                hasStartedLoadingOptions = true
+                loadOptions()
+            }
         }
         .onDisappear {
             searchTask?.cancel()
@@ -70,7 +74,7 @@ struct AddTVShowView: View {
                 navigationPath.append(show)
             }
         }
-        .sheet(item: $selectedShowForConfirmation) { show in
+        .mediaReviewSheet(item: $selectedShowForConfirmation) { show in
             AddConfirmationSheet(
                 title: show.title,
                 year: show.year,
@@ -491,7 +495,7 @@ struct AddTVShowView: View {
     private var tvOSContent: some View {
         VStack(spacing: 0) {
             searchBar
-            tvOSOptionsSection
+            tvOSOptionsButton
             optionsErrorSection
             Divider()
                 .background(ColorPalette.divider)
@@ -663,6 +667,25 @@ struct AddTVShowView: View {
     }
 
     #if os(tvOS)
+    private var tvOSOptionsButton: some View {
+        HStack(spacing: 24) {
+            Text("Choose a title, then review your add options.")
+                .font(AppTypography.subheadline())
+                .foregroundStyle(ColorPalette.textSecondaryDark)
+            Spacer()
+            Button { optionsExpanded = true } label: {
+                Label(isLoadingOptions ? "Loading Options…" : "Add Options", systemImage: "slider.horizontal.3")
+            }
+            .buttonStyle(TVInterfaceButtonStyle())
+            .disabled(isLoadingOptions)
+        }
+        .padding(.horizontal, TVSizing.contentPadding)
+        .padding(.vertical, 20)
+        .fullScreenCover(isPresented: $optionsExpanded) {
+            TVAddOptionsSheet { tvOSOptionsSection }
+        }
+    }
+
     private var tvOSOptionsSection: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
             TVAddMoviePickerRow(
@@ -984,7 +1007,7 @@ struct TVShowSearchResultCard: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             HStack(spacing: AppSpacing.sm) {
                 // Poster
-                CachedAsyncImage(url: posterURL, width: 60, height: 90)
+                CachedAsyncImage(url: posterURL, width: TVSizing.isTV ? 120 : 60, height: TVSizing.isTV ? 180 : 90)
                     .cornerRadius(AppRadius.sm)
 
                 // Info
@@ -1040,7 +1063,7 @@ struct TVShowSearchResultCard: View {
                     Text("In Library")
                         .font(AppTypography.caption1(.medium))
                         .foregroundColor(ColorPalette.success)
-                        .frame(width: 86, height: 34)
+                        .frame(width: TVSizing.isTV ? 160 : 86, height: TVSizing.isTV ? 64 : 34)
                         .background(ColorPalette.success.opacity(0.15))
                         .cornerRadius(AppRadius.sm)
                 } else {
@@ -1048,12 +1071,12 @@ struct TVShowSearchResultCard: View {
                         if isAdding {
                             ProgressView()
                                 .tint(.white)
-                                .frame(width: 76, height: 34)
+                                .frame(width: TVSizing.isTV ? 120 : 76, height: TVSizing.isTV ? 64 : 34)
                         } else {
                             Text("Add")
                                 .font(AppTypography.caption1(.semibold))
                                 .foregroundColor(.white)
-                                .frame(width: 76, height: 34)
+                                .frame(width: TVSizing.isTV ? 120 : 76, height: TVSizing.isTV ? 64 : 34)
                                 .background(ColorPalette.primary)
                                 .cornerRadius(AppRadius.sm)
                         }

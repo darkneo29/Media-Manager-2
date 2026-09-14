@@ -41,12 +41,12 @@ struct MovieFileCard: View {
                     if isDeleting {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                     } else {
                         Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: TVSizing.isTV ? 26 : 14, weight: .medium))
                             .foregroundColor(ColorPalette.error)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                             .background(ColorPalette.surfaceDark)
                             .cornerRadius(8)
                     }
@@ -140,12 +140,12 @@ struct EpisodeFileCard: View {
                     if isDeleting {
                         ProgressView()
                             .scaleEffect(0.8)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                     } else {
                         Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: TVSizing.isTV ? 26 : 14, weight: .medium))
                             .foregroundColor(ColorPalette.error)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                             .background(ColorPalette.surfaceDark)
                             .cornerRadius(8)
                     }

@@ -32,19 +32,29 @@ struct QuickAddMovieSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(tvOS)
+            HStack {
+                Text("Review and Add").font(AppTypography.title2())
+                Spacer()
+                Button("Close") { dismiss() }
+                    .buttonStyle(TVInterfaceButtonStyle())
+            }
+            .padding(32)
+            #else
             // Handle bar
             RoundedRectangle(cornerRadius: 2.5)
                 .fill(ColorPalette.textMutedDark)
                 .frame(width: 36, height: 5)
                 .padding(.top, AppSpacing.sm)
                 .padding(.bottom, AppSpacing.md)
+            #endif
 
             ScrollView {
                 VStack(spacing: AppSpacing.lg) {
                     // Poster and info
                     HStack(alignment: .top, spacing: AppSpacing.md) {
                         // Poster
-                        CachedAsyncImage(url: movie.posterURL, width: 120, height: 180)
+                        CachedAsyncImage(url: movie.posterURL, width: TVSizing.isTV ? 200 : 120, height: TVSizing.isTV ? 300 : 180)
                             .cornerRadius(AppRadius.md)
 
                         // Info
@@ -188,6 +198,10 @@ struct QuickAddMovieSheet: View {
                 .padding(.bottom, AppSpacing.lg)
             }
         }
+        #if os(tvOS)
+        .frame(maxWidth: 1200)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .background(ColorPalette.backgroundDark)
         .task {
             loadTrailer()
@@ -562,19 +576,29 @@ struct QuickAddTVShowSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            #if os(tvOS)
+            HStack {
+                Text("Review and Add").font(AppTypography.title2())
+                Spacer()
+                Button("Close") { dismiss() }
+                    .buttonStyle(TVInterfaceButtonStyle())
+            }
+            .padding(32)
+            #else
             // Handle bar
             RoundedRectangle(cornerRadius: 2.5)
                 .fill(ColorPalette.textMutedDark)
                 .frame(width: 36, height: 5)
                 .padding(.top, AppSpacing.sm)
                 .padding(.bottom, AppSpacing.md)
+            #endif
 
             ScrollView {
                 VStack(spacing: AppSpacing.lg) {
                     // Poster and info
                     HStack(alignment: .top, spacing: AppSpacing.md) {
                         // Poster
-                        CachedAsyncImage(url: show.posterURL, width: 120, height: 180)
+                        CachedAsyncImage(url: show.posterURL, width: TVSizing.isTV ? 200 : 120, height: TVSizing.isTV ? 300 : 180)
                             .cornerRadius(AppRadius.md)
 
                         // Info
@@ -718,6 +742,10 @@ struct QuickAddTVShowSheet: View {
                 .padding(.bottom, AppSpacing.lg)
             }
         }
+        #if os(tvOS)
+        .frame(maxWidth: 1200)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        #endif
         .background(ColorPalette.backgroundDark)
         .task {
             // Load trailer
@@ -1245,48 +1273,51 @@ struct QuickAddPickerRow: View {
     let onTap: () -> Void
 
     @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: AppSpacing.lg) {
-            Text(title)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundColor(.white)
+        Button { onTap() } label: {
+            HStack(spacing: AppSpacing.lg) {
+                Text(title)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundColor(.white)
 
-            Spacer()
+                Spacer()
 
-            if isLoading {
-                ProgressView()
-                    .scaleEffect(1.0)
-                    .tint(ColorPalette.secondary)
-            } else {
-                HStack(spacing: AppSpacing.sm) {
-                    Text(selectedLabel)
-                        .font(.system(size: 22))
-                        .foregroundColor(ColorPalette.secondary)
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(1.0)
+                        .tint(ColorPalette.secondary)
+                } else {
+                    HStack(spacing: AppSpacing.sm) {
+                        Text(selectedLabel)
+                            .font(.system(size: 22))
+                            .foregroundColor(ColorPalette.secondary)
 
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 18))
-                        .foregroundColor(Color.white.opacity(0.6))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 18))
+                            .foregroundColor(Color.white.opacity(0.6))
+                    }
                 }
             }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.md)
+                    .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.md)
+                    .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 3 : 1)
+            )
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? 1.02 : 1.0))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isFocused)
         }
-        .padding(.horizontal, AppSpacing.lg)
-        .padding(.vertical, AppSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.md)
-                .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.md)
-                .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 3 : 1)
-        )
-        .scaleEffect(isFocused ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: 0.2), value: isFocused)
-        .focusable()
+        .buttonStyle(.plain)
         .focused($isFocused)
-        .onTapGesture {
-            onTap()
-        }
+        .focusEffectDisabled()
+        .accessibilityLabel(title)
+        .accessibilityValue(selectedLabel)
         .disabled(isLoading)
     }
 }
@@ -1297,51 +1328,54 @@ struct QuickAddToggleRow: View {
     @Binding var isOn: Bool
 
     @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: AppSpacing.lg) {
-            VStack(alignment: .leading, spacing: AppSpacing.xxs) {
-                Text(title)
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(.white)
+        Button { isOn.toggle() } label: {
+            HStack(spacing: AppSpacing.lg) {
+                VStack(alignment: .leading, spacing: AppSpacing.xxs) {
+                    Text(title)
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
 
-                Text(subtitle)
-                    .font(.system(size: 18))
-                    .foregroundColor(Color.white.opacity(0.7))
+                    Text(subtitle)
+                        .font(.system(size: 18))
+                        .foregroundColor(Color.white.opacity(0.7))
+                }
+
+                Spacer()
+
+                // Toggle indicator
+                ZStack {
+                    Capsule()
+                        .fill(isOn ? ColorPalette.secondary : Color.gray.opacity(0.3))
+                        .frame(width: 60, height: 34)
+
+                    Circle()
+                        .fill(Color.white)
+                        .frame(width: 28, height: 28)
+                        .offset(x: isOn ? 12 : -12)
+                        .animation(.easeInOut(duration: 0.2), value: isOn)
+                }
             }
-
-            Spacer()
-
-            // Toggle indicator
-            ZStack {
-                Capsule()
-                    .fill(isOn ? ColorPalette.secondary : Color.gray.opacity(0.3))
-                    .frame(width: 60, height: 34)
-
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 28, height: 28)
-                    .offset(x: isOn ? 12 : -12)
-                    .animation(.easeInOut(duration: 0.2), value: isOn)
-            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.vertical, AppSpacing.md)
+            .background(
+                RoundedRectangle(cornerRadius: AppRadius.md)
+                    .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: AppRadius.md)
+                    .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 3 : 1)
+            )
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? 1.02 : 1.0))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isFocused)
         }
-        .padding(.horizontal, AppSpacing.lg)
-        .padding(.vertical, AppSpacing.md)
-        .background(
-            RoundedRectangle(cornerRadius: AppRadius.md)
-                .fill(isFocused ? ColorPalette.cardBackgroundElevatedDark : ColorPalette.cardBackgroundDark)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppRadius.md)
-                .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 3 : 1)
-        )
-        .scaleEffect(isFocused ? 1.02 : 1.0)
-        .animation(.easeInOut(duration: 0.2), value: isFocused)
-        .focusable()
+        .buttonStyle(.plain)
         .focused($isFocused)
-        .onTapGesture {
-            isOn.toggle()
-        }
+        .focusEffectDisabled()
+        .accessibilityLabel(title)
+        .accessibilityValue(isOn ? "On" : "Off")
     }
 }
 #endif

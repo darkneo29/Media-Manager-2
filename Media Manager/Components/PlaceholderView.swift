@@ -18,6 +18,12 @@ struct PlaceholderView: View {
         let icon: String?
         let handler: () -> Void
 
+        static var openSettings: ActionConfig {
+            ActionConfig(title: "Open Settings", icon: "gear") {
+                DeepLinkHandler.shared.pendingDestination = .settings
+            }
+        }
+
         init(title: String, icon: String? = nil, handler: @escaping () -> Void) {
             self.title = title
             self.icon = icon
@@ -76,12 +82,12 @@ struct PlaceholderView: View {
 
             VStack(spacing: 12) {
                 Text(title)
-                    .font(.system(size: 24, weight: .bold))
+                    .font(.system(size: TVSizing.isTV ? 36 : 24, weight: .bold))
                     .foregroundColor(.white)
                     .multilineTextAlignment(.center)
 
                 Text(description)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: TVSizing.isTV ? 26 : 16, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
                     .lineLimit(3)

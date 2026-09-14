@@ -302,7 +302,7 @@ struct SettingsView: View {
                                     .font(.system(size: 28, weight: .semibold))
                                     .foregroundColor(ColorPalette.textPrimaryDark)
 
-                                Text(syncService.isEnabled ? "Settings synced from iCloud" : "Enable to sync settings from iPhone/iPad")
+                                Text(syncService.isEnabled ? "Server settings and API keys sync securely" : "Sync server settings and API keys from iPhone/iPad")
                                     .font(.system(size: 22))
                                     .foregroundColor(ColorPalette.textSecondaryDark)
                             }
@@ -710,8 +710,8 @@ struct SettingsView: View {
         SettingsSection(
             title: "iCloud Sync",
             footer: syncService.isEnabled
-                ? "Settings are synced across your Apple devices signed into the same iCloud account."
-                : "Enable to sync your server settings across all your devices."
+                ? "Server settings and API keys sync through your private iCloud database. Enable sync on both devices using the same iCloud account."
+                : "Enable to securely sync server settings and API keys across your Apple devices."
         ) {
             // Sync Toggle Row
             HStack {
@@ -840,7 +840,8 @@ struct TVSettingsCard: View {
     let subtitle: String
     let action: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -885,14 +886,16 @@ struct TVSettingsCard: View {
                 RoundedRectangle(cornerRadius: AppRadius.lg)
                     .stroke(isFocused ? ColorPalette.secondary : Color.clear, lineWidth: 4)
             )
-            .scaleEffect(isFocused ? 1.02 : 1.0)
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? 1.02 : 1.0))
             .shadow(
                 color: isFocused ? ColorPalette.secondary.opacity(0.4) : Color.clear,
                 radius: isFocused ? 20 : 0
             )
-            .animation(.easeInOut(duration: 0.2), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 
@@ -947,7 +950,8 @@ private struct TVSettingsBackNavigationModifier: ViewModifier {
 private struct TVSettingsBackButton: View {
     let action: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button(action: action) {
@@ -964,14 +968,16 @@ private struct TVSettingsBackButton: View {
                     Capsule()
                         .stroke(isFocused ? ColorPalette.secondary : ColorPalette.divider, lineWidth: isFocused ? 4 : 1)
                 )
-                .scaleEffect(isFocused ? TVSizing.focusScale : 1.0)
+                .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : 1.0))
                 .shadow(
                     color: isFocused ? ColorPalette.secondary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                     radius: isFocused ? TVSizing.focusShadowRadius : 0
                 )
-                .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+                .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
         }
         .buttonStyle(.plain)
+        .focused($isFocused)
+        .focusEffectDisabled()
     }
 }
 #endif

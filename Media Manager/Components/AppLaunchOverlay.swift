@@ -8,7 +8,12 @@ struct AppLaunchOverlay: View {
 
             Image("LaunchImage")
                 .resizable()
+                #if os(tvOS)
+                // Keep the same iOS artwork fully visible on a landscape TV.
+                .scaledToFit()
+                #else
                 .scaledToFill()
+                #endif
                 .ignoresSafeArea()
         }
     }

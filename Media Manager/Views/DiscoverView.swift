@@ -74,7 +74,8 @@ struct DiscoverView: View {
                     PlaceholderView(
                         icon: "gear",
                         title: "TMDB Not Configured",
-                        description: "Go to Settings to configure your TMDB API token for Discover content"
+                        description: "Go to Settings to configure your TMDB API token for Discover content",
+                        action: TVSizing.isTV ? .openSettings : nil
                     )
                 } else if shouldShowLoading {
                     VStack(spacing: AppSpacing.md) {
@@ -151,14 +152,14 @@ struct DiscoverView: View {
                 }
             }
         }
-        .sheet(item: $selectedMovie) { movie in
+        .mediaReviewSheet(item: $selectedMovie) { movie in
             QuickAddMovieSheet(movie: movie) {
                 // Library state is updated optimistically by QuickAddSheet
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.hidden)
         }
-        .sheet(item: $selectedTVShow) { show in
+        .mediaReviewSheet(item: $selectedTVShow) { show in
             QuickAddTVShowSheet(show: show) {
                 // Library state is updated optimistically by QuickAddSheet
             }

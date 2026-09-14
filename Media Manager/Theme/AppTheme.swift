@@ -113,57 +113,57 @@ struct AppTypography {
 
     // MARK: - Title Styles
     static func largeTitle(_ weight: FontWeight = .bold) -> Font {
-        .system(size: 34, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 56 : 34, weight: weight.weight, design: .default)
     }
 
     static func title1(_ weight: FontWeight = .bold) -> Font {
-        .system(size: 28, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 46 : 28, weight: weight.weight, design: .default)
     }
 
     static func title2(_ weight: FontWeight = .bold) -> Font {
-        .system(size: 22, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 38 : 22, weight: weight.weight, design: .default)
     }
 
     static func title3(_ weight: FontWeight = .semibold) -> Font {
-        .system(size: 20, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 32 : 20, weight: weight.weight, design: .default)
     }
 
     // MARK: - Headline & Body Styles
     static func headline(_ weight: FontWeight = .semibold) -> Font {
-        .system(size: 17, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 29 : 17, weight: weight.weight, design: .default)
     }
 
     static func body(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 17, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 29 : 17, weight: weight.weight, design: .default)
     }
 
     static func callout(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 16, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 27 : 16, weight: weight.weight, design: .default)
     }
 
     static func subheadline(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 15, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 25 : 15, weight: weight.weight, design: .default)
     }
 
     static func footnote(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 13, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 23 : 13, weight: weight.weight, design: .default)
     }
 
     static func caption1(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 12, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 23 : 12, weight: weight.weight, design: .default)
     }
 
     static func caption2(_ weight: FontWeight = .regular) -> Font {
-        .system(size: 11, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 21 : 11, weight: weight.weight, design: .default)
     }
 
     // MARK: - Custom Styles
     static func overline(_ weight: FontWeight = .semibold) -> Font {
-        .system(size: 11, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 21 : 11, weight: weight.weight, design: .default)
     }
 
     static func button(_ weight: FontWeight = .semibold) -> Font {
-        .system(size: 17, weight: weight.weight, design: .default)
+        .system(size: TVSizing.isTV ? 27 : 17, weight: weight.weight, design: .default)
     }
 
     static func monospacedDigit(_ size: CGFloat = 17) -> Font {
@@ -207,7 +207,7 @@ struct TVSizing {
     /// Poster width for grid layouts
     static var posterWidth: CGFloat {
         #if os(tvOS)
-        return 220
+        return 240
         #else
         return 130
         #endif
@@ -216,7 +216,7 @@ struct TVSizing {
     /// Poster height for grid layouts (1.5:1 aspect ratio)
     static var posterHeight: CGFloat {
         #if os(tvOS)
-        return 330
+        return 360
         #else
         return 195
         #endif
@@ -260,7 +260,7 @@ struct TVSizing {
     /// Number of columns for poster grids (reduced on tvOS for better performance)
     static var gridColumns: Int {
         #if os(tvOS)
-        return 4  // Reduced from 6 to minimize simultaneous renders
+        return 6  // Lazy grids only construct the rows that are visible
         #else
         return 4
         #endif

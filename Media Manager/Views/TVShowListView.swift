@@ -131,7 +131,8 @@ struct TVShowListView: View {
                     PlaceholderView(
                         icon: "gear",
                         title: "Sonarr Not Configured",
-                        description: "Go to Settings to configure your Sonarr server URL and API key"
+                        description: "Go to Settings to configure your Sonarr server URL and API key",
+                        action: TVSizing.isTV ? .openSettings : nil
                     )
                 } else if libraryManager.isLoadingShows && libraryManager.tvShows.isEmpty {
                     ProgressView()
@@ -217,6 +218,11 @@ struct TVShowListView: View {
             }
             .navigationTitle("TV Shows")
             .navBarTitleDisplayMode(.large)
+            #if os(tvOS)
+            .safeAreaInset(edge: .top) {
+                tvLibraryActions
+            }
+            #else
             .searchable(text: $searchText, prompt: "Search shows...")
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -282,6 +288,7 @@ struct TVShowListView: View {
                     .disabled(libraryManager.isLoadingShows)
                 }
             }
+            #endif
             .navigationDestination(for: TVShow.self) { show in
                 TVShowDetailView(show: show)
             }
@@ -336,6 +343,46 @@ struct TVShowListView: View {
         }
     }
 
+
+    #if os(tvOS)
+    private var tvLibraryActions: some View {
+        HStack(spacing: 24) {
+            TVLibrarySearchButton(text: $searchText, title: "Search TV Shows")
+            Spacer(minLength: 24)
+            Menu {
+                ForEach(TVShowStatusFilter.allCases) { filter in
+                    Button(filter.rawValue) { statusFilter = filter }
+                }
+            } label: {
+                Label(statusFilter == .all ? "Filter" : statusFilter.rawValue, systemImage: "line.3.horizontal.decrease.circle")
+            }
+
+            if !libraryManager.tvShows.isEmpty {
+                Button(isSelectionMode ? "Done" : "Select") {
+                    isSelectionMode.toggle()
+                    if !isSelectionMode { selectedShowIds.removeAll() }
+                }
+            }
+            NavigationLink(destination: AddTVShowView(navigationPath: $navigationPath)) {
+                Label("Add", systemImage: "plus")
+            }
+            .buttonStyle(TVInterfaceButtonStyle(prominent: true))
+            .disabled(!isConfigured)
+            Button {
+                Task { await libraryManager.loadShows(forceRefresh: true) }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .accessibilityLabel("Refresh library")
+            .disabled(!isConfigured || libraryManager.isLoadingShows)
+        }
+        .buttonStyle(TVInterfaceButtonStyle())
+        .padding(.horizontal, TVSizing.contentPadding)
+        .padding(.vertical, 24)
+        .background(ColorPalette.backgroundDark)
+    }
+    #endif
+
     @ViewBuilder
     private func selectionBadge(for show: TVShow) -> some View {
         if isSelectionMode {
@@ -355,13 +402,13 @@ struct TVShowListView: View {
             Spacer()
 
             Button { runBulkMonitoring(monitored: true) } label: {
-                Image(systemName: "eye.fill")
+                Label("Monitor", systemImage: "eye.fill")
             }
             Button { runBulkMonitoring(monitored: false) } label: {
-                Image(systemName: "eye.slash.fill")
+                Label("Unmonitor", systemImage: "eye.slash.fill")
             }
             Button { runBulkSearch() } label: {
-                Image(systemName: "magnifyingglass")
+                Label("Search", systemImage: "magnifyingglass")
             }
             Menu {
                 ForEach(qualityProfiles) { profile in
@@ -370,13 +417,18 @@ struct TVShowListView: View {
                     }
                 }
             } label: {
-                Image(systemName: "slider.horizontal.3")
+                Label("Quality", systemImage: "slider.horizontal.3")
             }
             .disabled(qualityProfiles.isEmpty)
             Button(role: .destructive) { showingBulkDelete = true } label: {
-                Image(systemName: "trash")
+                Label("Delete", systemImage: "trash")
             }
         }
+        #if os(tvOS)
+        .buttonStyle(TVInterfaceButtonStyle())
+        #else
+        .labelStyle(.iconOnly)
+        #endif
         .font(AppTypography.body(.semibold))
         .foregroundColor(ColorPalette.primary)
         .padding(AppSpacing.md)
@@ -398,7 +450,7 @@ struct TVShowListView: View {
 
     private func handlePendingDeepLink(_ showId: Int? = nil) {
         guard let showId = showId ?? deepLinkTVShowId,
-              let show = libraryManager.tvShows.first(where: { $0.id == showId || $0.tvdbId == showId }) else {
+              let show = LibraryDeepLink.resolve(showId, in: libraryManager.tvShows) else {
             return
         }
 

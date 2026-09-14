@@ -32,6 +32,8 @@ struct StoredCredentials: Codable, Equatable {
 }
 
 final class CredentialStore {
+    nonisolated static let didChangeNotification = Notification.Name("MediaManagerCredentialsChanged")
+
     enum CredentialKey: String, CaseIterable {
         case radarrAPIKey
         case sonarrAPIKey
@@ -66,10 +68,29 @@ final class CredentialStore {
         return value
     }
 
+    /// Sync must distinguish a missing key from a locked/unavailable Keychain.
+    nonisolated func syncString(for key: CredentialKey) throws -> String {
+        var query = baseQuery(for: key)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return "" }
+        guard status == errSecSuccess, let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else {
+            throw CredentialStoreError.keychainFailure(status: status)
+        }
+        return value
+    }
+
     nonisolated func set(_ value: String, for key: CredentialKey) throws {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            removeValue(for: key)
+            let status = SecItemDelete(baseQuery(for: key) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw CredentialStoreError.keychainFailure(status: status)
+            }
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
             return
         }
 
@@ -97,11 +118,14 @@ final class CredentialStore {
         } else {
             throw CredentialStoreError.keychainFailure(status: status)
         }
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }
 
     nonisolated func removeValue(for key: CredentialKey) {
         let query = baseQuery(for: key)
-        SecItemDelete(query as CFDictionary)
+        if SecItemDelete(query as CFDictionary) == errSecSuccess {
+            NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+        }
     }
 
     nonisolated func removeAll() {

@@ -36,21 +36,23 @@ struct DownloadCard: View {
                 HStack(spacing: AppSpacing.xs) {
                     Button(action: onPauseResume) {
                         Image(systemName: pauseResumeIcon)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: TVSizing.isTV ? 26 : 14, weight: .medium))
                             .foregroundColor(ColorPalette.textSecondaryDark)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                             .background(ColorPalette.surfaceDark)
                             .cornerRadius(8)
                     }
+                    .accessibilityLabel(download.status == .paused ? "Resume download" : "Pause download")
 
                     Button(action: onDelete) {
                         Image(systemName: "trash")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: TVSizing.isTV ? 26 : 14, weight: .medium))
                             .foregroundColor(ColorPalette.error)
-                            .frame(width: 32, height: 32)
+                            .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
                             .background(ColorPalette.surfaceDark)
                             .cornerRadius(8)
                     }
+                    .accessibilityLabel("Delete download")
                 }
             }
 

@@ -1,491 +1,243 @@
-//
-//  iCloudSyncService.swift
-//  Media Manager
-//
-//  Handles iCloud Key-Value sync for settings synchronization across devices.
-//
-
+import CloudKit
 import Foundation
 
-/// Sync status for UI display
+/// Success means the private iCloud record was read/saved successfully, not that
+/// every other device has already fetched it.
 enum iCloudSyncStatus: Equatable {
-    case disabled
-    case syncing
+    case disabled, syncing
     case synced(Date)
     case error(String)
 
     var displayText: String {
         switch self {
-        case .disabled:
-            return "Disabled"
-        case .syncing:
-            return "Syncing..."
+        case .disabled: return "Disabled"
+        case .syncing: return "Syncing securely with iCloud…"
         case .synced(let date):
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .abbreviated
-            return "Synced \(formatter.localizedString(for: date, relativeTo: Date()))"
-        case .error(let message):
-            return "Error: \(message)"
+            return "iCloud updated \(formatter.localizedString(for: date, relativeTo: Date()))"
+        case .error(let message): return message
         }
     }
 }
 
-/// Service for syncing settings via iCloud Key-Value Store
 @MainActor
 @Observable
 final class iCloudSyncService {
     static let shared = iCloudSyncService()
-
-    // MARK: - Observable State
-
-    /// Current sync status for UI binding
+    private(set) var isEnabled: Bool
     private(set) var syncStatus: iCloudSyncStatus = .disabled
-
-    /// Last successful sync timestamp
     private(set) var lastSyncDate: Date?
 
-    // MARK: - Private Properties
+    private let cloud: SettingsCloudTransport
+    private let local: SettingsSyncLocalStore
+    private let defaults: UserDefaults
+    private let notifications: NotificationCenter
+    private let now: () -> Date
+    private var observers: [NSObjectProtocol] = []
+    private var scheduledSync: Task<Void, Never>?
+    private var revisions: [String: SettingsSyncRevision]
+    private var generation = 0
+    private var isApplying = false
+    private var needsAnotherSync = false
+    private var isRunning = false
+    private static let revisionKey = "privateCloudSettingsRevisionsV1"
+    private static let accountKey = "privateCloudSettingsAccountV1"
 
-    private let ubiquitousStore = NSUbiquitousKeyValueStore.default
-    private let localDefaults = UserDefaults.standard
-
-    /// Flag to prevent sync loops when we're updating from cloud
-    private var isUpdatingFromCloud = false
-
-    /// Flag to prevent sync loops during push operations
-    private var isPushingToCloud = false
-
-    /// Last observed values for the keys this service actually owns. UserDefaults
-    /// notifications do not identify a changed key, so this prevents unrelated
-    /// preferences (and our own timestamp writes) from winning sync conflicts.
-    private var lastLocalSyncableSnapshot: [String: SyncableValue] = [:]
-
-    /// Keys that should be synced
-    private let syncableKeys: [String] = [
-        "radarrURL",
-        "sonarrURL",
-        "sabnzbURL",
-        "unraidURL",
-        "unraidShowMediaStackFirst",
-        "unraidTemperatureUnit"
-    ]
-    private let secretKeys = CredentialStore.CredentialKey.allCases.map(\.rawValue)
-
-    /// Local-only keys (not synced)
-    private enum LocalKeys {
-        static let iCloudSyncEnabled = "iCloudSyncEnabled"
-        static let lastLocalChangeTimestamp = "lastLocalChangeTimestamp"
-        static let initialMigrationComplete = "iCloudInitialMigrationComplete"
-    }
-
-    /// iCloud keys
-    private enum CloudKeys {
-        static let syncTimestamp = "iCloudSyncTimestamp"
-        static let settingsVersion = "iCloudSettingsVersion"
-    }
-
-    /// Whether iCloud sync is enabled (stored locally, not synced)
-    private(set) var isEnabled: Bool = false
-
-    private struct SyncSnapshot {
-        let localTimestamp: TimeInterval
-        let cloudTimestamp: TimeInterval
-        let localValueCount: Int
-        let cloudValueCount: Int
-
-        var localHasData: Bool { localValueCount > 0 }
-        var cloudHasData: Bool { cloudValueCount > 0 }
-    }
-
-    private enum SyncResolution {
-        case pullCloudToLocal
-        case pushLocalToCloud
-        case noData
-    }
-
-    private enum SyncableValue: Equatable {
-        case string(String)
-        case number(String)
-        case other(String)
-    }
-
-    // MARK: - Initialization
-
-    private init() {
-        // Load initial state from UserDefaults
-        isEnabled = localDefaults.bool(forKey: LocalKeys.iCloudSyncEnabled)
-        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
-
-        if isEnabled {
-            let timestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
-            if timestamp > 0 {
-                let syncDate = Date(timeIntervalSince1970: timestamp)
-                lastSyncDate = syncDate
-                syncStatus = .synced(syncDate)
-            }
-            purgeCloudSecrets()
-            startSync()
+    init(cloud: SettingsCloudTransport? = nil,
+         local: SettingsSyncLocalStore? = nil,
+         defaults: UserDefaults = .standard, notifications: NotificationCenter = .default,
+         now: @escaping () -> Date = Date.init) {
+        self.cloud = cloud ?? PrivateCloudSettingsTransport()
+        self.local = local ?? DeviceSettingsSyncStore()
+        self.defaults = defaults
+        self.notifications = notifications
+        self.now = now
+        isEnabled = defaults.bool(forKey: "iCloudSyncEnabled")
+        revisions = defaults.data(forKey: Self.revisionKey).flatMap { try? JSONDecoder().decode([String: SettingsSyncRevision].self, from: $0) } ?? [:]
+        // Register before any cloud request. Keychain-only edits also trigger sync.
+        for name in [UserDefaults.didChangeNotification, CredentialStore.didChangeNotification] {
+            observers.append(notifications.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.scheduleLocalSync() }
+            })
         }
+        observers.append(notifications.addObserver(forName: .CKAccountChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.isEnabled else { return }
+                self.disableSync()
+                self.defaults.removeObject(forKey: Self.accountKey)
+                self.revisions = [:]
+                self.defaults.removeObject(forKey: Self.revisionKey)
+                self.syncStatus = .error(SettingsSyncError.accountChanged.localizedDescription)
+            }
+        })
     }
 
-    // MARK: - Public Methods
-
-    /// Enable sync and perform initial migration
     func enableSync() async {
         guard !isEnabled else { return }
-
-        // Update stored property immediately for UI
         isEnabled = true
-        syncStatus = .syncing
-        localDefaults.set(true, forKey: LocalKeys.iCloudSyncEnabled)
-
-        purgeCloudSecrets()
-        ubiquitousStore.synchronize()
-
-        // Perform initial migration BEFORE registering for notifications
-        await performInitialMigration()
-
-        // Force sync to iCloud
-        purgeCloudSecrets()
-        ubiquitousStore.synchronize()
-
-        // Now register for ongoing notifications
-        startSync()
-
-        updateSyncStatus()
+        defaults.set(true, forKey: "iCloudSyncEnabled")
+        await synchronize()
     }
 
-    /// Disable sync (keeps local data, stops syncing)
     func disableSync() {
         isEnabled = false
-        localDefaults.set(false, forKey: LocalKeys.iCloudSyncEnabled)
-        stopSync()
+        generation += 1
+        scheduledSync?.cancel()
+        scheduledSync = nil
+        defaults.set(false, forKey: "iCloudSyncEnabled")
         syncStatus = .disabled
     }
 
-    /// Force a sync now
     func syncNow() {
-        guard isEnabled else { return }
+        guard !isRunning else { needsAnotherSync = true; return }
+        scheduledSync?.cancel()
+        scheduledSync = Task { await synchronize() }
+    }
 
+    private func scheduleLocalSync() {
+        guard isEnabled, !isApplying else { return }
+        do {
+            let changed = try local.read().contains { key, value in
+                try SettingsSyncRevision.fingerprint(value) != revisions[key]?.fingerprint
+            }
+            guard changed else { return }
+        } catch { return }
+        if isRunning { needsAnotherSync = true; return }
+        scheduledSync?.cancel()
+        scheduledSync = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            await self?.synchronize()
+        }
+    }
+
+    /// Single-flight, read-before-write sync. Tests inject an isolated transport
+    /// and local store; the production transport always uses the private database.
+    func synchronize() async {
+        guard isEnabled else { return }
+        guard !isRunning else { needsAnotherSync = true; return }
+        isRunning = true
+        let operationGeneration = generation
+        defer {
+            isRunning = false
+            if isEnabled, generation != operationGeneration, needsAnotherSync {
+                scheduledSync = Task { [weak self] in await self?.synchronize() }
+            }
+        }
         syncStatus = .syncing
-        purgeCloudSecrets()
-        ubiquitousStore.synchronize()
-        applyResolvedSync()
-        purgeCloudSecrets()
-        ubiquitousStore.synchronize()
-
-        updateSyncStatus()
-    }
-
-    // MARK: - Initial Migration
-
-    /// Returns true when a stored value should be treated as meaningful sync data.
-    private func hasMeaningfulValue(_ value: Any?) -> Bool {
-        guard let value else { return false }
-        if let stringValue = value as? String {
-            return !stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        do {
+            repeat {
+                needsAnotherSync = false
+                try await synchronizeOnce(generation: operationGeneration)
+            } while needsAnotherSync && isEnabled && generation == operationGeneration && !Task.isCancelled
+            guard isEnabled, generation == operationGeneration, !Task.isCancelled else { return }
+            let date = now()
+            lastSyncDate = date
+            syncStatus = .synced(date)
+        } catch {
+            guard isEnabled, generation == operationGeneration else { return }
+            if error is CancellationError {
+                syncStatus = .error("Sync interrupted. Try Sync Now again.")
+            } else if let ck = error as? CKError {
+                switch ck.code {
+                case .notAuthenticated: syncStatus = .error("Sign in to iCloud in this device’s Settings, then try Sync Now.")
+                case .networkUnavailable, .networkFailure: syncStatus = .error("iCloud is unavailable. Check your connection and try again.")
+                case .quotaExceeded: syncStatus = .error("Your iCloud storage is full.")
+                case .serverRejectedRequest, .invalidArguments: syncStatus = .error("iCloud sync needs a server configuration update. Local settings were kept.")
+                default: syncStatus = .error("iCloud could not complete sync. Try again shortly.")
+                }
+            } else { syncStatus = .error(error.localizedDescription) }
         }
-        return true
     }
 
-    private func performInitialMigration() async {
-        let migrationComplete = localDefaults.bool(forKey: LocalKeys.initialMigrationComplete)
-        let snapshot = makeSyncSnapshot()
-
-        #if DEBUG
-        print("[iCloudSync] Migration - Local values: \(snapshot.localValueCount), Cloud values: \(snapshot.cloudValueCount)")
-        print("[iCloudSync] Migration - Local timestamp: \(snapshot.localTimestamp), Cloud timestamp: \(snapshot.cloudTimestamp)")
-        print("[iCloudSync] Migration - Already complete: \(migrationComplete)")
-        #endif
-
-        applyResolvedSync(snapshot: snapshot)
-        localDefaults.set(true, forKey: LocalKeys.initialMigrationComplete)
-        purgeCloudSecrets()
+    private func checkpoint(_ expected: Int) throws {
+        try Task.checkCancellation()
+        guard isEnabled, expected == generation else { throw CancellationError() }
     }
 
-    private func makeSyncSnapshot() -> SyncSnapshot {
-        SyncSnapshot(
-            localTimestamp: localDefaults.double(forKey: LocalKeys.lastLocalChangeTimestamp),
-            cloudTimestamp: ubiquitousStore.double(forKey: CloudKeys.syncTimestamp),
-            localValueCount: meaningfulSyncableValueCount(in: localDefaults),
-            cloudValueCount: meaningfulSyncableValueCount(in: ubiquitousStore)
-        )
-    }
-
-    private func meaningfulSyncableValueCount(in store: KeyValueStoring) -> Int {
-        syncableKeys.reduce(into: 0) { count, key in
-            if hasMeaningfulValue(store.object(forKey: key)) {
-                count += 1
+    private func synchronizeOnce(generation expected: Int) async throws {
+        let account = try await cloud.accountIdentifier()
+        try checkpoint(expected)
+        if let previous = defaults.string(forKey: Self.accountKey), previous != account {
+            disableSync()
+            defaults.set(account, forKey: Self.accountKey)
+            revisions = [:]
+            defaults.removeObject(forKey: Self.revisionKey)
+            syncStatus = .error(SettingsSyncError.accountChanged.localizedDescription)
+            throw SettingsSyncError.accountChanged
+        }
+        defaults.set(account, forKey: Self.accountKey)
+        let localValues = try local.read()
+        let pending = try payload(for: localValues)
+        for attempt in 0..<3 {
+            let fetched = try await cloud.fetch()
+            try checkpoint(expected)
+            let remote = try Self.decode(fetched)
+            let merged = remote.merging(pending)
+            let record = fetched ?? CKRecord(recordType: PrivateCloudSettingsTransport.recordType, recordID: PrivateCloudSettingsTransport.recordID)
+            if merged != remote {
+                record.encryptedValues[PrivateCloudSettingsTransport.encryptedField] = try JSONEncoder().encode(merged) as NSData
+                do { _ = try await cloud.save(record) }
+                catch let error as CKError where error.code == .serverRecordChanged {
+                    if attempt == 2 { throw SettingsSyncError.conflict }
+                    continue
+                }
             }
-        }
-    }
-
-    private func resolution(for snapshot: SyncSnapshot) -> SyncResolution {
-        if snapshot.cloudHasData {
-            if !snapshot.localHasData {
-                return .pullCloudToLocal
+            try checkpoint(expected)
+            // A local edit made during the network round-trip must survive.
+            guard try local.read() == localValues else { needsAnotherSync = true; return }
+            isApplying = true
+            defer { isApplying = false }
+            try local.apply(merged.entries)
+            let applied = try local.read()
+            for (key, entry) in merged.entries {
+                guard let values = applied[key] else { continue }
+                revisions[key] = SettingsSyncRevision(fingerprint: try SettingsSyncRevision.fingerprint(values), modifiedAt: entry.modifiedAt, revision: entry.revision)
             }
-
-            if snapshot.cloudTimestamp > snapshot.localTimestamp {
-                return .pullCloudToLocal
-            }
-
-            if snapshot.localTimestamp == 0,
-               snapshot.cloudValueCount >= snapshot.localValueCount {
-                return .pullCloudToLocal
-            }
-        }
-
-        if snapshot.localHasData {
-            if !snapshot.cloudHasData || snapshot.localTimestamp > snapshot.cloudTimestamp {
-                return .pushLocalToCloud
-            }
-        }
-
-        return .noData
-    }
-
-    private func applyResolvedSync(snapshot: SyncSnapshot? = nil) {
-        let snapshot = snapshot ?? makeSyncSnapshot()
-
-        switch resolution(for: snapshot) {
-        case .pullCloudToLocal:
-            #if DEBUG
-            print("[iCloudSync] Pulling settings from iCloud")
-            #endif
-            pullCloudToLocal()
-        case .pushLocalToCloud:
-            #if DEBUG
-            print("[iCloudSync] Pushing local settings to iCloud")
-            #endif
-            pushLocalToCloud()
-        case .noData:
-            #if DEBUG
-            print("[iCloudSync] No settings changes to sync")
-            #endif
-            break
-        }
-    }
-
-    // MARK: - Notification Tokens
-
-    private var remoteChangeObserver: Any?
-    private var localChangeObserver: Any?
-
-    // MARK: - Sync Operations
-
-    private func startSync() {
-        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
-
-        // Register for remote change notifications (closure-based, guaranteed main queue)
-        remoteChangeObserver = NotificationCenter.default.addObserver(
-            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
-            object: ubiquitousStore,
-            queue: .main
-        ) { [weak self] notification in
-            MainActor.assumeIsolated {
-                self?.handleRemoteChange(notification)
-            }
-        }
-
-        // Register for local changes (closure-based, guaranteed main queue)
-        localChangeObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            MainActor.assumeIsolated {
-                self?.handleLocalChange(notification)
-            }
-        }
-
-        // Trigger initial sync
-        purgeCloudSecrets()
-        ubiquitousStore.synchronize()
-    }
-
-    private func stopSync() {
-        if let observer = remoteChangeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            remoteChangeObserver = nil
-        }
-        if let observer = localChangeObserver {
-            NotificationCenter.default.removeObserver(observer)
-            localChangeObserver = nil
-        }
-    }
-
-    /// Push local UserDefaults values to iCloud
-    private func pushLocalToCloud() {
-        guard !isPushingToCloud else { return }
-        isPushingToCloud = true
-        defer { isPushingToCloud = false }
-
-        let timestamp = Date().timeIntervalSince1970
-
-        for key in syncableKeys {
-            if let value = localDefaults.object(forKey: key) {
-                ubiquitousStore.set(value, forKey: key)
-            } else {
-                // Propagate local deletions instead of leaving stale cloud values.
-                ubiquitousStore.removeObject(forKey: key)
-            }
-        }
-
-        ubiquitousStore.set(timestamp, forKey: CloudKeys.syncTimestamp)
-        ubiquitousStore.set(Int64(3), forKey: CloudKeys.settingsVersion)
-
-        localDefaults.set(timestamp, forKey: LocalKeys.lastLocalChangeTimestamp)
-        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
-        purgeCloudSecrets()
-
-        #if DEBUG
-        print("[iCloudSync] Pushed local settings to iCloud")
-        #endif
-    }
-
-    /// Pull iCloud values to local UserDefaults
-    private func pullCloudToLocal() {
-        isUpdatingFromCloud = true
-
-        for key in syncableKeys {
-            if let value = ubiquitousStore.object(forKey: key) {
-                localDefaults.set(value, forKey: key)
-            } else {
-                // A missing cloud key represents a deletion and must clear a
-                // previously configured local endpoint/preference.
-                localDefaults.removeObject(forKey: key)
-            }
-        }
-        purgeCloudSecrets()
-
-        // Force UserDefaults sync for @AppStorage
-        localDefaults.synchronize()
-
-        // Update local timestamp to match cloud
-        let cloudTimestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
-        localDefaults.set(cloudTimestamp, forKey: LocalKeys.lastLocalChangeTimestamp)
-
-        lastLocalSyncableSnapshot = makeLocalSyncableSnapshot()
-        isUpdatingFromCloud = false
-
-        // Server endpoints may have changed. Drop data/image caches tied to the
-        // previous server before subsequent views fetch through the new config.
-        ConfigurationManager.shared.refreshConfiguration(invalidateCaches: true)
-
-        #if DEBUG
-        print("[iCloudSync] Pulled settings from iCloud to local")
-        #endif
-    }
-
-    // MARK: - Notification Handlers
-
-    private func handleLocalChange(_ notification: Notification) {
-        guard isEnabled, !isUpdatingFromCloud, !isPushingToCloud else { return }
-
-        let currentSnapshot = makeLocalSyncableSnapshot()
-        guard currentSnapshot != lastLocalSyncableSnapshot else { return }
-        lastLocalSyncableSnapshot = currentSnapshot
-
-        // Push changes to iCloud
-        pushLocalToCloud()
-        ubiquitousStore.synchronize()
-        updateSyncStatus()
-    }
-
-    private func handleRemoteChange(_ notification: Notification) {
-        guard isEnabled else { return }
-
-        guard let userInfo = notification.userInfo,
-              let reasonNumber = userInfo[NSUbiquitousKeyValueStoreChangeReasonKey] as? NSNumber else {
+            try persistRevisions()
             return
         }
+    }
 
-        let reason = reasonNumber.intValue
-
-        #if DEBUG
-        print("[iCloudSync] Remote change received, reason: \(reason)")
-        #endif
-
-        switch reason {
-        case NSUbiquitousKeyValueStoreServerChange,
-             NSUbiquitousKeyValueStoreInitialSyncChange:
-            // New data from iCloud
-            purgeCloudSecrets()
-            handleIncomingSync(userInfo: userInfo)
-
-        case NSUbiquitousKeyValueStoreQuotaViolationChange:
-            syncStatus = .error("iCloud storage quota exceeded")
-
-        case NSUbiquitousKeyValueStoreAccountChange:
-            // iCloud account changed - reset migration flag
-            localDefaults.set(false, forKey: LocalKeys.initialMigrationComplete)
-            Task { @MainActor in
-                await performInitialMigration()
+    private func payload(for values: [String: [String: String]]) throws -> CloudSettingsPayload {
+        var result = CloudSettingsPayload()
+        for (key, value) in values {
+            let fingerprint = try SettingsSyncRevision.fingerprint(value)
+            let previous = revisions[key]
+            // Unconfigured devices do not publish empty server/credential records.
+            var revision = previous ?? SettingsSyncRevision(fingerprint: fingerprint, modifiedAt: 0, revision: "migration")
+            if previous != nil && revision.fingerprint != fingerprint {
+                revision = SettingsSyncRevision(fingerprint: fingerprint, modifiedAt: max(now().timeIntervalSince1970, revision.modifiedAt + 0.001), revision: UUID().uuidString)
             }
-
-        default:
-            break
+            revisions[key] = revision
+            if revision.modifiedAt == 0 && value.values.allSatisfy({ $0.isEmpty }) { continue }
+            result.entries[key] = CloudSettingsEntry(values: value, modifiedAt: revision.modifiedAt, revision: revision.revision)
         }
+        try persistRevisions()
+        return result
     }
 
-    private func handleIncomingSync(userInfo: [AnyHashable: Any]) {
-        // Get changed keys
-        guard let changedKeys = userInfo[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] else {
-            return
-        }
-
-        // Check if any of our syncable keys changed
-        let relevantChanges = changedKeys.filter { syncableKeys.contains($0) || $0 == CloudKeys.syncTimestamp }
-
-        guard !relevantChanges.isEmpty else { return }
-
-        #if DEBUG
-        print("[iCloudSync] Relevant changed keys: \(relevantChanges)")
-        #endif
-
-        // Compare timestamps for conflict resolution
-        let localTimestamp = localDefaults.double(forKey: LocalKeys.lastLocalChangeTimestamp)
-        let cloudTimestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
-
-        if cloudTimestamp > localTimestamp {
-            // Cloud is newer - pull changes
-            pullCloudToLocal()
-        }
-        // Otherwise, local changes are newer - they'll be pushed on next local change
-
-        updateSyncStatus()
+    private func persistRevisions() throws {
+        defaults.set(try JSONEncoder().encode(revisions), forKey: Self.revisionKey)
     }
 
-    private func updateSyncStatus() {
-        let timestamp = ubiquitousStore.double(forKey: CloudKeys.syncTimestamp)
-        if timestamp > 0 {
-            let syncDate = Date(timeIntervalSince1970: timestamp)
-            lastSyncDate = syncDate
-            syncStatus = .synced(syncDate)
-        } else {
-            syncStatus = .synced(Date())
-            lastSyncDate = Date()
+    static func decode(_ record: CKRecord?) throws -> CloudSettingsPayload {
+        guard let record else { return CloudSettingsPayload() }
+        guard let data = record.encryptedValues[PrivateCloudSettingsTransport.encryptedField] as? Data else {
+            throw SettingsSyncError.invalidResponse
         }
-    }
-
-    private func purgeCloudSecrets() {
-        for key in secretKeys {
-            ubiquitousStore.removeObject(forKey: key)
-        }
-    }
-
-    private func makeLocalSyncableSnapshot() -> [String: SyncableValue] {
-        syncableKeys.reduce(into: [:]) { snapshot, key in
-            guard let value = localDefaults.object(forKey: key) else { return }
-
-            if let string = value as? String {
-                snapshot[key] = .string(string)
-            } else if let number = value as? NSNumber {
-                snapshot[key] = .number(number.stringValue)
-            } else {
-                snapshot[key] = .other(String(describing: value))
+        let payload = try JSONDecoder().decode(CloudSettingsPayload.self, from: data)
+        guard payload.version == 1 else { throw SettingsSyncError.newerVersion }
+        for (key, entry) in payload.entries {
+            guard entry.modifiedAt.isFinite, entry.modifiedAt >= 0, !entry.revision.isEmpty else {
+                throw SettingsSyncError.invalidResponse
+            }
+            if ["radarr", "sonarr", "sabnzb", "unraid"].contains(key) {
+                guard entry.values["url"] != nil, entry.values["credential"] != nil else {
+                    throw SettingsSyncError.invalidResponse
+                }
             }
         }
+        return payload
     }
 }

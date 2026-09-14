@@ -47,6 +47,14 @@ struct CalendarDayData: Identifiable, Equatable {
     var hasEvents: Bool { movieCount > 0 || tvShowCount > 0 }
 }
 
+enum CalendarWeekdayLabels {
+    static func ordered(for calendar: Calendar) -> [String] {
+        let symbols = calendar.shortWeekdaySymbols
+        let start = calendar.firstWeekday - 1
+        return Array(symbols[start...]) + Array(symbols[..<start])
+    }
+}
+
 struct CalendarView: View {
     @ObservedObject private var libraryState = LibraryStateManager.shared
     @ObservedObject private var releaseRadar = ReleaseRadarService.shared
@@ -76,7 +84,7 @@ struct CalendarView: View {
     @State private var lastDisplayedMonth: Date?
 
     private let calendar = Calendar.current
-    private let daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    private var daysOfWeek: [String] { CalendarWeekdayLabels.ordered(for: calendar) }
 
     // MARK: - Computed Properties (using cache)
 
@@ -121,7 +129,8 @@ struct CalendarView: View {
     #if os(tvOS)
     private var tvOSCalendarLayout: some View {
         HStack(alignment: .top, spacing: 0) {
-            // Left side: Calendar
+            // Keep six-week months reachable with the Siri Remote.
+            ScrollView {
                 VStack(spacing: AppSpacing.lg) {
                     // Month navigation
                     tvOSCalendarHeader
@@ -133,14 +142,15 @@ struct CalendarView: View {
                     // Days of week
                     tvOSDaysOfWeekHeader
 
-                // Calendar grid
-                tvOSCalendarGrid
+                    // Calendar grid
+                    tvOSCalendarGrid
 
-                // Legend
-                tvOSCalendarLegend
+                    // Legend
+                    tvOSCalendarLegend
 
-                Spacer()
+                }
             }
+            .scrollClipDisabled()
             .frame(maxWidth: .infinity)
             .padding(.leading, TVSizing.contentPadding)
             .padding(.trailing, AppSpacing.lg)
@@ -193,7 +203,7 @@ struct CalendarView: View {
     }
 
     private var tvOSCalendarHeader: some View {
-        HStack(spacing: AppSpacing.xl) {
+        HStack(spacing: AppSpacing.md) {
             Button {
                 withAnimation { goToPreviousMonth() }
             } label: {
@@ -202,11 +212,15 @@ struct CalendarView: View {
                     .foregroundColor(ColorPalette.secondary)
                     .frame(width: 60, height: 60)
             }
+            .accessibilityLabel("Previous month")
 
             Text(monthTitle)
-                .font(.system(size: 42, weight: .bold))
+                .font(.system(size: 36, weight: .bold))
                 .foregroundColor(ColorPalette.textPrimaryDark)
-                .frame(minWidth: 300)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
+                .frame(minWidth: 340)
 
             Button {
                 withAnimation { goToNextMonth() }
@@ -216,8 +230,9 @@ struct CalendarView: View {
                     .foregroundColor(ColorPalette.secondary)
                     .frame(width: 60, height: 60)
             }
+            .accessibilityLabel("Next month")
 
-            Spacer()
+            Spacer(minLength: 0)
 
             Button {
                 withAnimation {

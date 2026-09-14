@@ -277,14 +277,14 @@ struct DashboardView: View {
                 await loadFollowedShowEventLabels()
             }
         }
-        .sheet(item: $selectedTrendingMovie) { movie in
+        .mediaReviewSheet(item: $selectedTrendingMovie) { movie in
             QuickAddMovieSheet(movie: movie) {
                 // Library state is updated optimistically by QuickAddSheet
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.hidden)
         }
-        .sheet(item: $selectedTrendingShow) { show in
+        .mediaReviewSheet(item: $selectedTrendingShow) { show in
             QuickAddTVShowSheet(show: show) {
                 // Library state is updated optimistically by QuickAddSheet
             }
@@ -1044,7 +1044,8 @@ struct DashboardCard: View {
     var isInLibrary: Bool = false
     let onTap: () -> Void
 
-    @Environment(\.isFocused) private var isFocused
+    @FocusState private var isFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var posterWidth: CGFloat { TVSizing.posterWidth }
     private var posterHeight: CGFloat { TVSizing.posterHeight }
@@ -1096,13 +1097,14 @@ struct DashboardCard: View {
                 // Title and subtitle
                 VStack(alignment: .leading, spacing: TVSizing.isTV ? 4 : 2) {
                     Text(title)
-                        .font(TVSizing.isTV ? AppTypography.body(.medium) : AppTypography.caption1(.medium))
+                        .font(TVSizing.isTV ? .system(size: 28, weight: .medium) : AppTypography.caption1(.medium))
                         .foregroundColor(ColorPalette.textPrimaryDark)
                         .lineLimit(TVSizing.isTV ? 2 : 1)
+                .frame(height: TVSizing.isTV ? 72 : nil, alignment: .topLeading)
 
                     if let subtitle = subtitle {
                         Text(subtitle)
-                            .font(TVSizing.isTV ? AppTypography.subheadline() : AppTypography.caption2())
+                            .font(TVSizing.isTV ? .system(size: 22) : AppTypography.caption2())
                             .foregroundColor(ColorPalette.textMutedDark)
                             .lineLimit(1)
                     }
@@ -1111,6 +1113,7 @@ struct DashboardCard: View {
             }
         }
         .buttonStyle(DashboardCardButtonStyle())
+        .focused($isFocused)
     }
 }
 
@@ -1118,18 +1121,19 @@ struct DashboardCard: View {
 /// Optimized for tvOS performance with reduced shadow complexity and longer animations
 struct DashboardCardButtonStyle: ButtonStyle {
     @Environment(\.isFocused) private var isFocused
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             #if os(tvOS)
-            .scaleEffect(isFocused ? TVSizing.focusScale : (configuration.isPressed ? 0.95 : 1.0))
+            .scaleEffect(reduceMotion ? 1 : (isFocused ? TVSizing.focusScale : (configuration.isPressed ? 0.95 : 1.0)))
             .shadow(
                 color: isFocused ? ColorPalette.primary.opacity(TVSizing.focusShadowOpacity) : Color.clear,
                 radius: isFocused ? TVSizing.focusShadowRadius : 0,
                 x: 0,
                 y: isFocused ? 6 : 0  // Reduced y-offset for simpler shadow
             )
-            .animation(.easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
+            .animation(reduceMotion ? nil : .easeInOut(duration: TVSizing.focusAnimationDuration), value: isFocused)
             #else
             .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
             #endif

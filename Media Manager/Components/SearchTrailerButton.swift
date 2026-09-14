@@ -14,14 +14,14 @@ struct SearchTrailerButton: View {
                         .scaleEffect(0.7)
                 } else {
                     Image(systemName: isUnavailable ? "xmark.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.system(size: TVSizing.isTV ? 24 : 14))
                 }
 
                 Text(isUnavailable ? "No Trailer" : "Watch Trailer")
                     .font(AppTypography.caption1(.semibold))
             }
             .foregroundColor(isUnavailable ? ColorPalette.textMutedDark : .white)
-            .frame(width: 126, height: 34)
+            .frame(width: TVSizing.isTV ? 240 : 126, height: TVSizing.isTV ? 64 : 34)
             .background(isUnavailable ? ColorPalette.divider.opacity(0.35) : Color.red.opacity(0.9))
             .cornerRadius(AppRadius.sm)
         }
