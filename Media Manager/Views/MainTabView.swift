@@ -31,6 +31,7 @@ struct MainTabView: View {
     @Environment(DeepLinkHandler.self) private var deepLinkHandler
     @ObservedObject private var libraryState = LibraryStateManager.shared
     @State private var selectedTab: Int? = 0
+    @State private var moreNavigationPath = NavigationPath()
 
     // Deep link navigation state - passed to child views
     @State private var deepLinkMovieId: Int?
@@ -120,10 +121,13 @@ struct MainTabView: View {
             deepLinkMovieId = nil
         case .calendar:
             selectedTab = 5
+            moreNavigationPath = NavigationPath([MoreDestination.calendar])
         case .downloads:
             selectedTab = 4
+            moreNavigationPath = NavigationPath([MoreDestination.downloads])
         case .settings:
             selectedTab = 7
+            moreNavigationPath = NavigationPath([MoreDestination.settings])
         }
 
         // Clear the pending destination after handling
@@ -211,8 +215,9 @@ struct MainTabView: View {
         )
     }
 
+    #if !os(tvOS)
     private var iPhoneLayout: some View {
-        TabView(selection: selectedTabBinding) {
+        TabView(selection: phoneTabSelection) {
             DashboardView()
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
@@ -237,32 +242,54 @@ struct MainTabView: View {
                 }
                 .tag(3)
 
-            DownloadsView()
-                .tabItem {
-                    Label("Downloads", systemImage: "arrow.down.circle.fill")
-                }
-                .tag(4)
-
-            CalendarView()
-                .tabItem {
-                    Label("Calendar", systemImage: "calendar")
-                }
-                .tag(5)
-
-            ServerView()
-                .tabItem {
-                    Label("Unraid", systemImage: "server.rack")
-                }
-                .tag(6)
-
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gear")
-                }
-                .tag(7)
+            moreNavigation
+                .tabItem { Label("More", systemImage: "ellipsis") }
+                .tag(8)
         }
         .tint(ColorPalette.secondary)
+        .onAppear {
+            // Preserve the selected destination when an iPad enters compact width.
+            if let destination = MoreDestination(rawValue: selectedTab ?? 0), moreNavigationPath.isEmpty {
+                moreNavigationPath.append(destination)
+            }
+        }
     }
+
+    private var phoneTabSelection: Binding<Int> {
+        Binding(get: { (0...3).contains(selectedTab ?? 0) ? (selectedTab ?? 0) : 8 },
+                set: { selectedTab = $0 })
+    }
+
+    private var moreNavigation: some View {
+        NavigationStack(path: $moreNavigationPath) {
+            List(MoreDestination.allCases) { destination in
+                NavigationLink(value: destination) {
+                    Label(destination.title, systemImage: destination.icon)
+                }
+                .accessibilityIdentifier("more.\(destination.rawValue)")
+                .listRowBackground(ColorPalette.cardBackgroundDark)
+            }
+            .scrollContentBackground(.hidden)
+            .background(ColorPalette.backgroundDark)
+            .navigationTitle("More")
+            .navigationDestination(for: MoreDestination.self) { destination in
+                moreDestination(destination)
+                    .onAppear { selectedTab = destination.rawValue }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func moreDestination(_ destination: MoreDestination) -> some View {
+        switch destination {
+        case .downloads: DownloadsView(isEmbedded: true)
+        case .calendar: CalendarView(isEmbedded: true, sharedNavigationPath: $moreNavigationPath)
+        case .unraid: ServerView(isEmbedded: true)
+        case .settings: SettingsView(isEmbedded: true, sharedNavigationPath: $moreNavigationPath)
+        }
+    }
+
+    #endif
 
     // MARK: - tvOS Layout (Top Tab Bar Navigation)
     // Uses LazyView to defer tab content creation for better initial load performance
@@ -328,4 +355,25 @@ struct MainTabView: View {
     MainTabView()
         .preferredColorScheme(.dark)
         .environment(DeepLinkHandler.shared)
+}
+
+private enum MoreDestination: Int, CaseIterable, Identifiable, Hashable {
+    case downloads = 4, calendar = 5, unraid = 6, settings = 7
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .downloads: return "Downloads"
+        case .calendar: return "Calendar"
+        case .unraid: return "Unraid"
+        case .settings: return "Settings"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .downloads: return "arrow.down.circle.fill"
+        case .calendar: return "calendar"
+        case .unraid: return "server.rack"
+        case .settings: return "gear"
+        }
+    }
 }

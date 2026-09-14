@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StorageOverviewCard: View {
     let array: UnraidArray
+    var diskInventory: [UnraidDisk]? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
@@ -114,28 +115,30 @@ struct StorageOverviewCard: View {
                 }
             }
 
-            // Disk Summary
-            HStack(spacing: AppSpacing.md) {
-                DiskTypeSummary(
-                    icon: "shield.checkered",
-                    label: "Parity",
-                    count: array.disks.filter { $0.type == .parity }.count,
-                    color: ColorPalette.primary
-                )
+            // Counts come from the independent inventory, never the compact storage query.
+            if let diskInventory {
+                HStack(spacing: AppSpacing.md) {
+                    DiskTypeSummary(
+                        icon: "shield.checkered",
+                        label: "Parity",
+                        count: diskInventory.filter { $0.type == .parity }.count,
+                        color: ColorPalette.primary
+                    )
 
-                DiskTypeSummary(
-                    icon: "internaldrive.fill",
-                    label: "Data",
-                    count: array.disks.filter { $0.type == .data }.count,
-                    color: ColorPalette.secondary
-                )
+                    DiskTypeSummary(
+                        icon: "internaldrive.fill",
+                        label: "Data",
+                        count: diskInventory.filter { $0.type == .data }.count,
+                        color: ColorPalette.secondary
+                    )
 
-                DiskTypeSummary(
-                    icon: "bolt.fill",
-                    label: "Cache",
-                    count: array.disks.filter { $0.type == .cache }.count,
-                    color: ColorPalette.warning
-                )
+                    DiskTypeSummary(
+                        icon: "bolt.fill",
+                        label: "Cache",
+                        count: diskInventory.filter { $0.type == .cache }.count,
+                        color: ColorPalette.warning
+                    )
+                }
             }
         }
         .padding(AppSpacing.md)

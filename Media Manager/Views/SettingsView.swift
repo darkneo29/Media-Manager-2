@@ -45,6 +45,10 @@ private enum BackupPassphraseMode {
 #endif
 
 struct SettingsView: View {
+    var isEmbedded = false
+    var sharedNavigationPath: Binding<NavigationPath>? = nil
+    private var activeNavigationPath: Binding<NavigationPath> { sharedNavigationPath ?? $navigationPath }
+
     @Environment(DeepLinkHandler.self) private var deepLinkHandler
     @State private var navigationPath = NavigationPath()
     #if !os(tvOS)
@@ -63,7 +67,7 @@ struct SettingsView: View {
     @State private var syncService = iCloudSyncService.shared
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        AppNavigationContainer(isEmbedded: isEmbedded, path: activeNavigationPath) {
             ZStack {
                 ColorPalette.backgroundDark.ignoresSafeArea()
 
@@ -183,8 +187,8 @@ struct SettingsView: View {
     }
 
     private func popSettingsDestination() {
-        guard !navigationPath.isEmpty else { return }
-        navigationPath.removeLast()
+        guard !activeNavigationPath.wrappedValue.isEmpty else { return }
+        activeNavigationPath.wrappedValue.removeLast()
     }
 
     // MARK: - tvOS Settings Layout
@@ -204,7 +208,7 @@ struct SettingsView: View {
                             title: "Radarr",
                             subtitle: "Movies"
                         ) {
-                            navigationPath.append(SettingsDestination.radarr)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.radarr)
                         }
 
                         TVSettingsCard(
@@ -213,7 +217,7 @@ struct SettingsView: View {
                             title: "Sonarr",
                             subtitle: "TV Shows"
                         ) {
-                            navigationPath.append(SettingsDestination.sonarr)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.sonarr)
                         }
 
                         TVSettingsCard(
@@ -222,7 +226,7 @@ struct SettingsView: View {
                             title: "SabNZB",
                             subtitle: "Downloads"
                         ) {
-                            navigationPath.append(SettingsDestination.sabnzb)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.sabnzb)
                         }
 
                         TVSettingsCard(
@@ -231,7 +235,7 @@ struct SettingsView: View {
                             title: "Unraid",
                             subtitle: "Server"
                         ) {
-                            navigationPath.append(SettingsDestination.unraid)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.unraid)
                         }
 
                         TVSettingsCard(
@@ -240,7 +244,7 @@ struct SettingsView: View {
                             title: "TMDB",
                             subtitle: "Trending Data"
                         ) {
-                            navigationPath.append(SettingsDestination.tmdb)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.tmdb)
                         }
 
                         TVSettingsCard(
@@ -249,7 +253,7 @@ struct SettingsView: View {
                             title: "Add Defaults",
                             subtitle: "Watch & Siri"
                         ) {
-                            navigationPath.append(SettingsDestination.addDefaults)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.addDefaults)
                         }
                     }
                 }
@@ -266,7 +270,7 @@ struct SettingsView: View {
                             title: "Radarr",
                             subtitle: "Logs & Restore"
                         ) {
-                            navigationPath.append(SettingsDestination.radarrTroubleshooting)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.radarrTroubleshooting)
                         }
 
                         TVSettingsCard(
@@ -275,7 +279,7 @@ struct SettingsView: View {
                             title: "Sonarr",
                             subtitle: "Logs & Restore"
                         ) {
-                            navigationPath.append(SettingsDestination.sonarrTroubleshooting)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.sonarrTroubleshooting)
                         }
 
                         TVSettingsCard(
@@ -284,7 +288,7 @@ struct SettingsView: View {
                             title: "SabNZB",
                             subtitle: "Warnings"
                         ) {
-                            navigationPath.append(SettingsDestination.sabnzbTroubleshooting)
+                            activeNavigationPath.wrappedValue.append(SettingsDestination.sabnzbTroubleshooting)
                         }
                     }
                 }
@@ -390,7 +394,7 @@ struct SettingsView: View {
                         title: "What's New",
                         subtitle: WhatsNewCatalog.latestSummary
                     ) {
-                        navigationPath.append(SettingsDestination.whatsNew)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.whatsNew)
                     }
                 }
             }
@@ -408,31 +412,31 @@ struct SettingsView: View {
                 // Server Configuration Section
                 SettingsSection(title: "Server Configuration", footer: "Configure your media server connections and API keys") {
                     Button {
-                        navigationPath.append(SettingsDestination.radarr)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.radarr)
                     } label: {
                         SettingsRow(icon: "server.rack", iconColor: ColorPalette.primary, title: "Radarr Server")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.sonarr)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.sonarr)
                     } label: {
                         SettingsRow(icon: "server.rack", iconColor: ColorPalette.success, title: "Sonarr Server")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.sabnzb)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.sabnzb)
                     } label: {
                         SettingsRow(icon: "server.rack", iconColor: ColorPalette.secondary, title: "SabNZB Server")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.unraid)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.unraid)
                     } label: {
                         SettingsRow(icon: "externaldrive.fill.badge.checkmark", iconColor: ColorPalette.info, title: "Unraid Server")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.tmdb)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.tmdb)
                     } label: {
                         SettingsRow(icon: "film.stack", iconColor: ColorPalette.warning, title: "TMDB")
                     }
@@ -441,7 +445,7 @@ struct SettingsView: View {
 
                 SettingsSection(title: "Adding Media", footer: "Shared defaults and presets used by Discover, Siri, and Apple Watch") {
                     Button {
-                        navigationPath.append(SettingsDestination.addDefaults)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.addDefaults)
                     } label: {
                         SettingsRow(
                             icon: "plus.rectangle.on.folder.fill",
@@ -470,19 +474,19 @@ struct SettingsView: View {
                 // Troubleshooting Section
                 SettingsSection(title: "Troubleshooting", footer: "View server logs, warnings, and restore from server backups") {
                     Button {
-                        navigationPath.append(SettingsDestination.radarrTroubleshooting)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.radarrTroubleshooting)
                     } label: {
                         SettingsRow(icon: "film.fill", iconColor: ColorPalette.primary, title: "Radarr")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.sonarrTroubleshooting)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.sonarrTroubleshooting)
                     } label: {
                         SettingsRow(icon: "tv.fill", iconColor: ColorPalette.success, title: "Sonarr")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        navigationPath.append(SettingsDestination.sabnzbTroubleshooting)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.sabnzbTroubleshooting)
                     } label: {
                         SettingsRow(icon: "arrow.down.circle.fill", iconColor: ColorPalette.secondary, title: "SabNZB")
                     }
@@ -497,7 +501,7 @@ struct SettingsView: View {
                         .background(ColorPalette.divider)
 
                     Button {
-                        navigationPath.append(SettingsDestination.whatsNew)
+                        activeNavigationPath.wrappedValue.append(SettingsDestination.whatsNew)
                     } label: {
                         SettingsRow(
                             icon: "sparkles.rectangle.stack.fill",

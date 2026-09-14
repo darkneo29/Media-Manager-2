@@ -35,22 +35,6 @@ struct RadarrSettingsView: View {
         }
         #if !os(tvOS)
         .navBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    saveSettingsSilently()
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text("Settings")
-                    }
-                    .foregroundColor(ColorPalette.secondary)
-                }
-            }
-        }
         #endif
     }
 

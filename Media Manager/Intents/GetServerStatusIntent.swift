@@ -19,40 +19,8 @@ struct GetServerStatusIntent: AppIntent {
         }
 
         do {
-            let (system, array, containers, _) = try await UnraidService.shared.fetchAllData()
-
-            // Format uptime
-            let hours = system.uptime / 3600
-            let days = hours / 24
-            let remainingHours = hours % 24
-            let uptimeString = days > 0 ? "\(days)d \(remainingHours)h" : "\(hours)h"
-
-            // Format memory
-            let memoryUsedGB = Double(system.memory.used) / (1024 * 1024 * 1024)
-            let memoryTotalGB = Double(system.memory.total) / (1024 * 1024 * 1024)
-            let memoryPercent = system.memory.usagePercentage
-
-            // Format storage
-            let storageUsedTB = Double(array.capacity.used) / (1000 * 1000 * 1000 * 1000)
-            let storageTotalTB = Double(array.capacity.total) / (1000 * 1000 * 1000 * 1000)
-            let storagePercent = array.capacity.usagePercentage
-
-            // Count running containers
-            let runningContainers = containers.filter { $0.state == .running }.count
-            let totalContainers = containers.count
-
-            let cpuText = system.cpu.usage.map { "\(Int($0))%" } ?? "unavailable"
-            let memoryText = system.memory.total > 0
-                ? "\(String(format: "%.1f", memoryUsedGB))/\(String(format: "%.1f", memoryTotalGB)) GB (\(Int(memoryPercent))%)"
-                : "unavailable"
-            let summary = """
-            \(system.hostname) is online. \
-            Array: \(array.state.displayName). Uptime: \(uptimeString). \
-            CPU: \(cpuText). \
-            Memory: \(memoryText). \
-            Storage: \(String(format: "%.1f", storageUsedTB))/\(String(format: "%.1f", storageTotalTB)) TB (\(Int(storagePercent))%). \
-            Containers: \(runningContainers)/\(totalContainers) running.
-            """
+            let overview = try await UnraidService.shared.fetchOverview()
+            let summary = overview.spokenSummary
 
             return .result(
                 value: summary,

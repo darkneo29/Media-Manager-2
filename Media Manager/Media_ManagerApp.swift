@@ -12,6 +12,9 @@ struct Media_ManagerApp: App {
     @State private var deepLinkHandler = DeepLinkHandler.shared
 
     init() {
+        #if DEBUG
+        UnraidIntegrationFixtures.installIfRequested()
+        #endif
         #if DEBUG && os(tvOS)
         TVDesignFixtures.installIfRequested()
         #endif
@@ -19,7 +22,14 @@ struct Media_ManagerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                #if DEBUG
+                if UnraidIntegrationFixtures.enabled { ServerView() }
+                else { ContentView() }
+                #else
+                ContentView()
+                #endif
+            }
                 .preferredColorScheme(.dark)
                 .environment(deepLinkHandler)
                 .task {

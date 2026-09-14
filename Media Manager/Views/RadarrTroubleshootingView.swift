@@ -32,21 +32,6 @@ struct RadarrTroubleshootingView: View {
         .navigationTitle("Radarr")
         #if !os(tvOS)
         .navBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text("Settings")
-                    }
-                    .foregroundColor(ColorPalette.secondary)
-                }
-            }
-        }
         .sheet(isPresented: $showingLogs) {
             LogsSheetView(
                 title: "Radarr Logs",

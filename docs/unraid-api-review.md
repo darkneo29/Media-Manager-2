@@ -59,20 +59,41 @@ The second pass covered the service, response models, server screen, dashboard h
 
 Backup and cloud settings already include Unraid credentials/preferences and apply credentials before publishing URL changes. No backup-format or encryption change was needed. The new request identity protects reads after those flows refresh configuration as well.
 
-### Recommended next changes, in priority order
+### Priority changes implemented for 3.0 (16)
 
-1. **Separate summary and detail reads, with per-section availability.** The dashboard and Siri still fetch full disk and VM details they do not display. Use a compact shared summary for them; fetch detailed disks/VMs on the server screen. Keep healthy sections visible when a single resolver fails. Display unavailable distinctly from an empty container/VM list. This is the strongest remaining performance/resilience improvement.
-2. **Discover and cache capabilities and permissions per endpoint/key.** Determine supported fields/actions at connection time and retain API version separately from OS version. Explain disabled controls, surface denied read resources, and remember missing native restart support instead of sending the same rejected command on every restart. Keep an option to refresh capabilities after an API upgrade.
-3. **Use different refresh intervals for different data.** Hostname, version, CPU model, and disk inventory rarely change; CPU/RAM/container state change more often. Retain slow data longer. Add measured backoff/Retry-After handling for background polling. Evaluate foreground GraphQL subscriptions with reconnect/polling fallback only after measuring their benefit; do not introduce an always-on background socket.
-4. **Improve operational diagnostics.** Add capability-gated container logs, resource metrics, and a direct WebUI link. Add parity-check status and boot-device/pool awareness where available. These help distinguish an API permission failure from a container that starts and immediately exits. Prefer read-only diagnostics before expanding destructive controls.
-5. **Finish lifecycle and command verification.** Move resource command coordination into the service if multiple server screens can operate simultaneously. Poll for expected state for asynchronous VM shutdown/reboot, with a bounded deadline and honest pending/error display. Add simulator UI coverage for slow commands, navigation, foreground return, and server/key changes; run the same checks against an actual 7.3.x server.
+1. **Independent summary and detail reads.** Dashboard and Siri request hardware, metrics, array capacity/state, and container IDs/states. They omit disk inventory, VM domains, images, and other container metadata. The server screen adds separate disks, containers, VM, and parity sections. A failed resolver retains its previous value with an error and timestamp; an unavailable list is not labelled empty or zero. CPU/RAM remain available to Siri when hardware lookup fails, and container counts remain available when storage fails. The former monolithic snapshot path has been removed.
+2. **Capabilities and permissions.** The connection test and server refresh discover schema fields, authenticated roles/resource permissions, and API version, cached per endpoint/key. Known denied or unsupported actions are disabled. Missing introspection or identity permissions are represented as unknown, with the server remaining authoritative; they do not prevent baseline monitoring. Native Docker restart support is cached, with the start/stop compatibility path retained. Manual refresh rechecks access after an API upgrade or key change.
+3. **Independent refresh clocks.** Successful section results and in-flight requests are shared per endpoint/key. Hardware is retained for 300 seconds, disk inventory 120, storage/parity 30, containers/VMs 15, metrics 10, and discovery 600. The dashboard checks every 30 seconds; the server screen every 10 while visible and active. Manual refresh bypasses completed values but shares in-flight work. Read failures back off, HTTP 429 honors Retry-After across sections, and superseded credential results cannot publish. Commands invalidate only affected resource status.
+4. **Operational diagnostics.** Container details display the latest 200 log lines plus CPU, RAM, network and block I/O. Resource samples use the API's GraphQL WebSocket subscription; authentication uses the documented connection parameters. The socket exists only while the diagnostics sheet is active, closes on cancellation, and has bounded reconnect attempts and receive timeouts. Logs and metrics fail independently. Parity status, progress, error count, and speed appear on the server screen when supported. Detailed disk inventory continues to include cache, parity, and boot devices.
+5. **VM completion verification.** Service-level resource coordination rejects duplicate commands across callers. Accepted VM mutations are followed by uncached expected-state checks, with a bounded verification window. Reboot observation runs during and after the mutation and requires a non-running-to-running transition; an unchanged running sample is insufficient. If completion cannot be observed, the UI says the command was accepted but unverified. Mutations are never automatically retried after ambiguous transport failures.
 
-No latency, battery, or live-server performance improvement is claimed from builds or mock tests. The present tests establish request counts, parsing, routing and error behaviour; profiling and physical-server checks remain necessary to quantify runtime gains.
+### Verification
 
-### Verification completed
+The regression suite covers query size and resolver independence, different cache clocks/coalescing, stale data and Retry-After, endpoint/key changes during in-flight work, read-only/custom permissions, nullable inventory/large metrics, bounded logs and parity, duplicate VM commands, observed and unobserved VM transitions, and subscription authentication/filtering/ping/cancellation. Existing Docker command/fallback/error regression coverage is retained.
 
-- Four Unraid regression tests passed on the iOS 27 iPhone 17 simulator: command/fallback failures, nullable snapshots and cache identity, endpoint/retry/overflow handling, and missing metrics.
-- The cache test confirms two concurrent callers share one HTTP request, a subsequent read reuses it, force refresh makes another request, and key/server changes each trigger a new authenticated request.
-- All 15 read/mutation shapes validated against both the official API v4.36.0 schema and the fetched current main schema. This checks GraphQL shape, not runtime authorization, feature flags, or daemon behaviour.
-- Final iOS and tvOS simulator builds passed, and `git diff --check` passed.
-- Live Docker/VM execution, physical-device foreground/background behaviour, and latency/battery measurements remain unverified. No server commands or deployment were performed during this audit.
+The offline simulator fixture is DEBUG-only and uses synthetic credentials and an `.invalid` hostname. UI coverage exercises partial VM failure with healthy containers, the logs/metrics sheet, read-only controls, and a six-second command that keeps its busy state past the former two-second timer. Screenshots are inspected for section availability and diagnostics layout.
+
+- All 18 targeted tests passed on a fresh iPhone 17 / iOS 26.5 simulator: 16 service regressions and two UI tests. Final result bundle: `Test-Media Manager-2026.09.14_06-24-57--0400.xcresult`.
+- Final iOS Debug test build and tvOS Debug simulator build passed.
+- All 30 project plist/entitlement files passed validation; `git diff --check` passed.
+- Final iOS Release simulator build passed; the resulting executable excludes the offline fixture hostname and launch flag. Built iOS/tvOS bundles report version 3.0 (16).
+
+All 24 read/mutation/subscription shapes validate against both official API v4.36.0 and fetched current main schemas. Schema validation does not establish runtime authorization or daemon behavior.
+
+Live Unraid Docker/VM execution, physical-device lifecycle behavior, and latency/battery measurements remain unverified. No live server commands or deployment were performed. The request-count tests establish cache behavior, not a measured battery or latency improvement.
+
+Additional primary implementation references:
+
+- [VM service and asynchronous operations](https://github.com/unraid/api/blob/main/api/src/unraid-api/graph/resolvers/vms/vms.service.ts)
+- [WebSocket authentication guard](https://github.com/unraid/api/blob/main/api/src/unraid-api/auth/authentication.guard.ts)
+
+### Follow-up correctness review
+
+- Cache timestamps and backoff deadlines now begin when responses arrive, so slow requests cannot consume their own freshness window or Retry-After delay. Valid cached sections remain usable during server throttling; overlapping rate-limit responses preserve the longest outstanding cooldown.
+- VM verification stops on HTTP 429 and shares the cooldown with the following status refresh. A paused, idle, suspended, crashed, or unknown sample cannot establish a reboot; verification requires an observed shutdown/stopped state followed by running.
+- Refreshing failed hardware no longer replaces other healthy sections with the full-screen connection spinner. Changing the endpoint/key closes any open container diagnostics sheet.
+- WebSocket partial-response errors are decoded before metrics data, preserving the server's permission/error message when the sample is null.
+
+Added regressions cover response-time cache deadlines, overlapping cooldowns, rate-limited VM verification and follow-up reads, non-reboot state transitions, null metrics with GraphQL errors, and partial-section visibility during a delayed hardware refresh.
+
+Follow-up validation: all 23 targeted checks passed (20 service tests and three UI tests) on iPhone 17 / iOS 26.5. Result bundle: `Test-Media Manager-2026.09.14_06-43-28--0400.xcresult`. The final iOS Debug test build, tvOS Debug build, and diff whitespace check passed. An earlier run failed to launch because the simulator was busy; after a full simulator boot the complete suite passed. Live-server validation remains outstanding.

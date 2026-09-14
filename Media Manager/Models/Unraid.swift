@@ -336,7 +336,7 @@ struct DockerContainer: Codable, Hashable, Identifiable {
     }
 }
 
-enum ContainerState: String, Codable {
+nonisolated enum ContainerState: String, Codable {
     case running = "running"
     case stopped = "stopped"
     case paused = "paused"
@@ -405,9 +405,10 @@ struct VmDomain: Codable, Hashable, Identifiable {
     }
 }
 
-enum VmState: String, Codable {
+nonisolated enum VmState: String, Codable {
     case running = "RUNNING"
     case stopped = "SHUTOFF"
+    case shuttingDown = "SHUTDOWN"
     case paused = "PAUSED"
     case suspended = "PMSUSPENDED"
     case idle = "IDLE"
@@ -424,6 +425,7 @@ enum VmState: String, Codable {
         switch self {
         case .running: return "Running"
         case .stopped: return "Stopped"
+        case .shuttingDown: return "Shutting down"
         case .paused: return "Paused"
         case .suspended: return "Suspended"
         case .idle: return "Idle"
@@ -439,18 +441,18 @@ enum VmState: String, Codable {
 
 // MARK: - GraphQL Response Models
 
-struct GraphQLResponse<T: Codable>: Codable {
+nonisolated struct GraphQLResponse<T: Codable>: Codable {
     let data: T?
     let errors: [GraphQLError]?
 }
 
-struct GraphQLError: Codable {
+nonisolated struct GraphQLError: Codable {
     let message: String
     let locations: [GraphQLErrorLocation]?
-    let path: [String]?
+    let path: [GraphQLPathComponent]?
 }
 
-struct GraphQLErrorLocation: Codable {
+nonisolated struct GraphQLErrorLocation: Codable {
     let line: Int
     let column: Int
 }
@@ -458,51 +460,51 @@ struct GraphQLErrorLocation: Codable {
 // MARK: - Unraid 7.2+ Response Models
 
 /// Full system info response for Unraid 7.2+
-struct SystemInfoResponse: Codable {
+nonisolated struct SystemInfoResponse: Codable {
     let vars: VarsData
     let online: Bool
     let info: TestInfoData
 }
 
 /// Vars data containing version
-struct VarsData: Codable {
+nonisolated struct VarsData: Codable {
     let version: String
 }
 
 /// Docker mutation response
-struct DockerMutationResponse: Codable {
+nonisolated struct DockerMutationResponse: Codable {
     let docker: DockerMutationResult
 }
 
-struct DockerMutationResult: Codable {
+nonisolated struct DockerMutationResult: Codable {
     let start: ContainerMutationResult?
     let stop: ContainerMutationResult?
 }
 
-struct ContainerMutationResult: Codable {
+nonisolated struct ContainerMutationResult: Codable {
     let id: String
     let state: String
     let status: String
 }
 
 // Info query response (full)
-struct InfoQueryResponse: Codable {
+nonisolated struct InfoQueryResponse: Codable {
     let info: InfoData
 }
 
-struct InfoData: Codable {
+nonisolated struct InfoData: Codable {
     let os: OSInfo
     let cpu: CPUInfo
     let memory: MemoryInfo?
 }
 
-struct OSInfo: Codable {
+nonisolated struct OSInfo: Codable {
     let hostname: String
     let version: String?
     let uptime: String
 }
 
-struct CPUInfo: Codable {
+nonisolated struct CPUInfo: Codable {
     let model: String?
     let brand: String?  // Contains actual CPU name (e.g., "Ryzen 7 2700")
     let cores: IntOrString
@@ -540,33 +542,33 @@ struct CPUInfo: Codable {
     }
 }
 
-struct MemoryInfo: Codable {
+nonisolated struct MemoryInfo: Codable {
     let total: String
     let used: String
     let free: String
 }
 
 // Simplified test response (for connection testing)
-struct TestInfoResponse: Codable {
+nonisolated struct TestInfoResponse: Codable {
     let info: TestInfoData
 }
 
-struct TestInfoData: Codable {
+nonisolated struct TestInfoData: Codable {
     let os: TestOSInfo
     let cpu: CPUInfo
 }
 
-struct TestOSInfo: Codable {
+nonisolated struct TestOSInfo: Codable {
     let hostname: String
     let uptime: String
 }
 
 // Array query response
-struct ArrayQueryResponse: Codable {
+nonisolated struct ArrayQueryResponse: Codable {
     let array: ArrayData
 }
 
-struct ArrayData: Codable {
+nonisolated struct ArrayData: Codable {
     let state: String
     let capacity: CapacityData
     let disks: [DiskData]
@@ -575,18 +577,18 @@ struct ArrayData: Codable {
     let boot: DiskData?
 }
 
-struct CapacityData: Codable {
+nonisolated struct CapacityData: Codable {
     let kilobytes: DiskCapacity?
     let disks: DiskCapacity?
 }
 
-struct DiskCapacity: Codable {
+nonisolated struct DiskCapacity: Codable {
     let total: String
     let used: String
     let free: String
 }
 
-struct DiskData: Codable {
+nonisolated struct DiskData: Codable {
     let id: String?
     let name: String?
     let size: IntOrString?
@@ -603,11 +605,11 @@ struct DiskData: Codable {
 }
 
 // Docker query response
-struct DockerQueryResponse: Codable {
+nonisolated struct DockerQueryResponse: Codable {
     let dockerContainers: [ContainerData]
 }
 
-struct ContainerData: Codable {
+nonisolated struct ContainerData: Codable {
     let id: String
     let names: [String]?
     let name: String?
@@ -619,11 +621,11 @@ struct ContainerData: Codable {
 
 // MARK: - VM Response Models
 
-struct VmsData: Codable {
+nonisolated struct VmsData: Codable {
     let domains: [VmDomainData]?
 }
 
-struct VmDomainData: Codable {
+nonisolated struct VmDomainData: Codable {
     let id: String?
     let name: String?
     let uuid: String?
@@ -631,11 +633,11 @@ struct VmDomainData: Codable {
 }
 
 /// VM mutation response
-struct VmMutationResponse: Codable {
+nonisolated struct VmMutationResponse: Codable {
     let vm: VmMutationResult
 }
 
-struct VmMutationResult: Codable {
+nonisolated struct VmMutationResult: Codable {
     let start: Bool?
     let stop: Bool?
     let forceStop: Bool?
@@ -646,16 +648,16 @@ struct VmMutationResult: Codable {
 
 // MARK: - Metrics Response Models (CPU/Memory usage)
 
-struct MetricsData: Codable {
+nonisolated struct MetricsData: Codable {
     let cpu: CpuUtilization?
     let memory: MemoryUtilization?
 }
 
-struct CpuUtilization: Codable {
+nonisolated struct CpuUtilization: Codable {
     let percentTotal: Double
 }
 
-struct MemoryUtilization: Codable {
+nonisolated struct MemoryUtilization: Codable {
     let total: Int64
     let used: Int64
     let free: Int64
@@ -695,6 +697,23 @@ extension UnraidSystemInfo {
             return "\(hours)h \(minutes)m"
         } else {
             return "\(minutes)m"
+        }
+    }
+}
+
+// GraphQL error paths can include list indices as well as field names.
+nonisolated enum GraphQLPathComponent: Codable {
+    case field(String), index(Int)
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if let index = try? value.decode(Int.self) { self = .index(index) }
+        else { self = .field(try value.decode(String.self)) }
+    }
+    func encode(to encoder: Encoder) throws {
+        var value = encoder.singleValueContainer()
+        switch self {
+        case .field(let field): try value.encode(field)
+        case .index(let index): try value.encode(index)
         }
     }
 }

@@ -10,6 +10,9 @@ struct ServerView: View {
 
     @AppStorage("unraidShowMediaStackFirst") private var showMediaStackFirst: Bool = true
 
+    @State private var snapshot: UnraidDetailSnapshot?
+    @State private var selectedContainer: DockerContainer?
+    @State private var commandNotice: String?
     @State private var systemInfo: UnraidSystemInfo?
     @State private var array: UnraidArray?
     @State private var containers: [DockerContainer] = []
@@ -55,9 +58,9 @@ struct ServerView: View {
 
             if !isConfigured {
                 notConfiguredView
-            } else if isLoading && systemInfo == nil {
+            } else if isLoading && snapshot == nil {
                 loadingView
-            } else if let error = error, systemInfo == nil {
+            } else if let error = error, snapshot == nil {
                 errorView(error)
             } else {
                 mainContent
@@ -71,6 +74,13 @@ struct ServerView: View {
         } message: {
             Text(commandError ?? "")
         }
+        .sheet(item: $selectedContainer) { container in
+            UnraidContainerDiagnosticsView(container: container)
+        }
+        .alert("VM command accepted", isPresented: Binding(
+            get: { commandNotice != nil }, set: { if !$0 { commandNotice = nil } }
+        )) { Button("OK", role: .cancel) { commandNotice = nil } }
+        message: { Text(commandNotice ?? "") }
         .navigationTitle("Server")
         .navBarTitleDisplayMode(.inline)
         .toolbar {
@@ -89,10 +99,13 @@ struct ServerView: View {
                         }
                     }
                     .disabled(isLoading)
+                    .accessibilityIdentifier("unraid.refresh")
                 }
             }
         }
         .task(id: [configuration.unraidURL, configuration.unraidAPIKey]) {
+            selectedContainer = nil
+            snapshot = nil
             systemInfo = nil
             array = nil
             containers = []
@@ -106,7 +119,7 @@ struct ServerView: View {
 
             // Start periodic refresh
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
+                try? await Task.sleep(nanoseconds: 10_000_000_000) // Fast data only; section caches retain slow data.
                 guard !Task.isCancelled && isViewVisible && scenePhase == .active && !isLoading else { continue }
                 await refreshData()
             }
@@ -122,7 +135,7 @@ struct ServerView: View {
         .onChange(of: scenePhase) { _, newPhase in
             // Kick an immediate refresh when returning to foreground while visible.
             if newPhase == .active && isViewVisible && isConfigured {
-                Task { await refreshData(forceRefresh: true) }
+                Task { await refreshData() }
             }
         }
     }
@@ -207,38 +220,26 @@ struct ServerView: View {
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: isTVOS ? TVSizing.sectionSpacing : AppSpacing.lg) {
-                if let error {
-                    Label("Refresh failed. Showing last received data. \(error)", systemImage: "exclamationmark.triangle")
-                        .font(AppTypography.caption1())
-                        .foregroundColor(ColorPalette.warning)
+                if let systemInfo {
+                    SystemStatusCard(systemInfo: systemInfo, arrayState: array?.state ?? .unknown)
+                } else if let metrics = snapshot?.overview.metrics.value, snapshot?.overview.metrics.error == nil {
+                    UnraidMetricsCard(metrics: metrics)
                 }
-                // System Status Card
-                if let systemInfo = systemInfo, let array = array {
-                    SystemStatusCard(
-                        systemInfo: systemInfo,
-                        arrayState: array.state
-                    )
-                }
-
-                // Storage Overview
-                if let array = array {
-                    StorageOverviewCard(array: array)
-                }
-
-                // Disks Section
-                if let array = array, !array.disks.isEmpty {
-                    disksSection(disks: array.disks)
-                }
-
-                // Virtual Machines Section
-                if !vms.isEmpty {
-                    vmsSection
-                }
-
-                // Docker Containers Section
-                if !containers.isEmpty {
-                    dockerSection
-                }
+                UnraidSectionMessage(title: "System", error: snapshot?.overview.system.error, updatedAt: snapshot?.overview.system.updatedAt)
+                UnraidSectionMessage(title: "Metrics", error: snapshot?.overview.metrics.error, updatedAt: snapshot?.overview.metrics.updatedAt)
+                if let array { StorageOverviewCard(array: array, diskInventory: snapshot?.disks.error == nil ? snapshot?.disks.value?.disks : nil) }
+                UnraidSectionMessage(title: "Storage", error: snapshot?.overview.storage.error, updatedAt: snapshot?.overview.storage.updatedAt)
+                if let disks = snapshot?.disks.value?.disks, !disks.isEmpty { disksSection(disks: disks) }
+                UnraidSectionMessage(title: "Disks", error: snapshot?.disks.error, updatedAt: snapshot?.disks.updatedAt)
+                if let parity = snapshot?.parity.value { UnraidParityCard(parity: parity) }
+                UnraidSectionMessage(title: "Parity", error: snapshot?.parity.error, updatedAt: snapshot?.parity.updatedAt)
+                vmsSection
+                UnraidSectionMessage(title: "Virtual machines", error: snapshot?.vms.error, updatedAt: snapshot?.vms.updatedAt)
+                if vms.isEmpty && snapshot?.vms.error == nil { Text("No virtual machines").foregroundColor(ColorPalette.textMutedDark) }
+                dockerSection
+                UnraidSectionMessage(title: "Containers", error: snapshot?.containers.error, updatedAt: snapshot?.containers.updatedAt)
+                if containers.isEmpty && snapshot?.containers.error == nil { Text("No containers").foregroundColor(ColorPalette.textMutedDark) }
+                if let caps = snapshot?.capabilities { UnraidAccessSummary(capabilities: caps) }
 
                 // Last Refresh Info
                 HStack {
@@ -293,7 +294,7 @@ struct ServerView: View {
 
                 Spacer()
 
-                Text("\(cachedRunningCount)/\(containers.count) running")
+                Text(snapshot?.containers.error == nil ? "\(cachedRunningCount)/\(containers.count) running" : "Status unavailable")
                     .font(AppTypography.caption1())
                     .foregroundColor(ColorPalette.textMutedDark)
             }
@@ -307,6 +308,8 @@ struct ServerView: View {
                         containers: cachedMediaStackContainers,
                         restartingContainerIds: restartingContainerIds,
                         busyContainerIds: Set(containerOperationTasks.keys),
+                        capabilities: snapshot?.capabilities ?? UnraidCapabilities(),
+                        onInspect: { selectedContainer = $0 },
                         onStart: startContainer,
                         onStop: stopContainer,
                         onRestart: restartContainer
@@ -319,6 +322,8 @@ struct ServerView: View {
                         containers: cachedOtherContainers,
                         restartingContainerIds: restartingContainerIds,
                         busyContainerIds: Set(containerOperationTasks.keys),
+                        capabilities: snapshot?.capabilities ?? UnraidCapabilities(),
+                        onInspect: { selectedContainer = $0 },
                         onStart: startContainer,
                         onStop: stopContainer,
                         onRestart: restartContainer
@@ -332,6 +337,8 @@ struct ServerView: View {
                             container: container,
                             isRestarting: restartingContainerIds.contains(container.id),
                             isBusy: containerOperationTasks[container.id] != nil,
+                            capabilities: snapshot?.capabilities ?? UnraidCapabilities(),
+                            onInspect: { selectedContainer = container },
                             onStart: { startContainer(container) },
                             onStop: { stopContainer(container) },
                             onRestart: { restartContainer(container) }
@@ -348,8 +355,10 @@ struct ServerView: View {
         VStack(alignment: .leading, spacing: AppSpacing.sm) {
             VMGroupCard(
                 vms: vms,
+                stateAvailable: snapshot?.vms.error == nil,
                 restartingVmIds: restartingVmIds,
                 busyVmIds: Set(vmOperationTasks.keys),
+                capabilities: snapshot?.capabilities ?? UnraidCapabilities(),
                 onStart: startVm,
                 onStop: stopVm,
                 onRestart: restartVm,
@@ -402,8 +411,8 @@ struct ServerView: View {
 
     private func startVm(_ vm: VmDomain) {
         runVmCommand(vm) {
-            if vm.state == .paused { try await UnraidService.shared.resumeVm(id: vm.id) }
-            else { try await UnraidService.shared.startVm(id: vm.id) }
+            if vm.state == .paused { return try await UnraidService.shared.resumeVm(id: vm.id) }
+            else { return try await UnraidService.shared.startVm(id: vm.id) }
         }
     }
     private func stopVm(_ vm: VmDomain) {
@@ -416,7 +425,7 @@ struct ServerView: View {
         runVmCommand(vm) { try await UnraidService.shared.forceStopVm(id: vm.id) }
     }
 
-    private func runVmCommand(_ vm: VmDomain, restarting: Bool = false, action: @escaping () async throws -> Void) {
+    private func runVmCommand(_ vm: VmDomain, restarting: Bool = false, action: @escaping () async throws -> UnraidVMCommandResult) {
         guard vmOperationTasks[vm.id] == nil else { return }
         if restarting { restartingVmIds.insert(vm.id) }
         vmOperationTasks[vm.id] = Task {
@@ -424,7 +433,9 @@ struct ServerView: View {
                 restartingVmIds.remove(vm.id)
                 vmOperationTasks.removeValue(forKey: vm.id)
             }
-            do { try await action() }
+            do {
+                if case .unverified(let message) = try await action() { commandNotice = "\(vm.displayName): \(message)" }
+            }
             catch { if !Task.isCancelled { commandError = "\(vm.displayName): \(error.localizedDescription)" } }
             if isViewVisible && !Task.isCancelled { await refreshData() }
         }
@@ -442,12 +453,13 @@ struct ServerView: View {
         isLoading = true
         defer { if loadGeneration == generation { isLoading = false } }
         do {
-            let data = try await UnraidService.shared.fetchAllData(forceRefresh: forceRefresh)
+            let data = try await UnraidService.shared.fetchDetails(forceRefresh: forceRefresh)
             guard !Task.isCancelled, loadGeneration == generation else { return }
-            systemInfo = data.system
-            array = data.array
-            containers = data.containers
-            vms = data.vms
+            snapshot = data
+            systemInfo = data.overview.system.value
+            array = data.overview.storage.value
+            containers = data.containers.value ?? []
+            vms = data.vms.value ?? []
             updateCachedContainers()
             lastRefresh = Date()
             error = nil

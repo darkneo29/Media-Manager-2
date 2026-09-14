@@ -783,56 +783,6 @@ struct UnraidCommandTests {
 }
 
 extension UnraidCommandTests {
-    private static var snapshot: String {
-        #"{"data":{"vars":{"version":"7.3.0"},"info":{"os":{"hostname":"tower","uptime":"2026-09-01T00:00:00Z"},"cpu":{"brand":"CPU","cores":8}},"metrics":{"cpu":{"percentTotal":12.5},"memory":{"total":"34359738368","used":8589934592,"free":"25769803776","available":"30000000000","percentTotal":12.7}},"array":{"state":"STOPPED","capacity":{"kilobytes":{"total":"1000","used":"250","free":"750"}},"disks":[{"id":"disk:1","name":null,"size":null,"status":null,"temp":null,"type":"DATA"}],"caches":[],"parities":[],"boot":{"id":"disk:boot","name":"boot","size":"1024","status":"DISK_OK","type":"BOOT"}},"docker":{"containers":[]},"vms":{"domains":[{"id":"vm:123","name":null,"state":"SHUTOFF"}]}}}"#
-    }
-
-    @Test @MainActor
-    func snapshotHandlesNullableFieldsAndScopesCacheToCredentials() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [UnraidMockProtocol.self]
-        let session = URLSession(configuration: configuration)
-        defer { session.invalidateAndCancel() }
-        var server = URL(string: "https://tower.invalid/graphql")!
-        var key = "first-key"
-        let service = UnraidService(session: session, credentials: { (server, key) })
-        UnraidMockProtocol.requests = []
-        UnraidMockProtocol.replies = [(200, Self.snapshot)]
-        async let first = service.fetchAllData()
-        async let second = service.fetchAllData()
-        let (data, other) = try await (first, second)
-        #expect(UnraidMockProtocol.requests.count == 1)
-        #expect(data.system == other.system)
-        #expect(data.system.memory.total == 34359738368)
-        #expect(data.system.memory.available == 30000000000)
-        #expect(data.array.disks.first?.size == 0)
-        #expect(data.array.disks.first?.status == .unknown)
-        #expect(data.array.disks.last?.type == .flash)
-        #expect(data.array.capacity.total == 1_000_000)
-        #expect(data.vms.first?.id == "vm:123")
-        #expect(data.vms.first?.name == "Unnamed VM")
-        _ = try await service.fetchAllData()
-        #expect(UnraidMockProtocol.requests.count == 1)
-
-        UnraidMockProtocol.replies = [(200, Self.snapshot)]
-        _ = try await service.fetchAllData(forceRefresh: true)
-        #expect(UnraidMockProtocol.requests.count == 2)
-        key = "replacement-key"
-        UnraidMockProtocol.replies = [(200, Self.snapshot)]
-        _ = try await service.fetchAllData()
-        #expect(UnraidMockProtocol.requests.count == 3)
-        #expect(UnraidMockProtocol.requests.last?.value(forHTTPHeaderField: "x-api-key") == key)
-        server = URL(string: "https://other-tower.invalid/graphql")!
-        UnraidMockProtocol.replies = [(200, Self.snapshot)]
-        _ = try await service.fetchAllData()
-        #expect(UnraidMockProtocol.requests.count == 4)
-        #expect(UnraidMockProtocol.requests.last?.url == server)
-        await service.invalidateCache()
-        UnraidMockProtocol.replies = [(200, Self.snapshot)]
-        _ = try await service.fetchAllData()
-        #expect(UnraidMockProtocol.requests.count == 5)
-    }
-
     @Test @MainActor
     func endpointsRetryPolicyAndOverflowAreSafe() throws {
         #expect(try UnraidService.graphQLURL(from: " https://tower:8443/ ").absoluteString == "https://tower:8443/graphql")

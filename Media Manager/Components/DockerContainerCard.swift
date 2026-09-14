@@ -4,6 +4,8 @@ struct DockerContainerCard: View {
     let container: DockerContainer
     var isRestarting: Bool = false  // External override to show restarting state
     var isBusy: Bool = false
+    var capabilities = UnraidCapabilities()
+    var onInspect: (() -> Void)? = nil
     let onStart: () -> Void
     let onStop: () -> Void
     let onRestart: () -> Void
@@ -46,10 +48,16 @@ struct DockerContainerCard: View {
 
             Spacer()
 
+            if let onInspect {
+                Button(action: onInspect) { Image(systemName: "info.circle") }
+                    .accessibilityLabel("Details for \(container.displayName)")
+                    .accessibilityIdentifier("unraid.details.\(container.id)")
+            }
             // Action Buttons
             HStack(spacing: AppSpacing.xs) {
                 if isBusy || isRestarting {
                     ProgressView()
+                        .accessibilityIdentifier("unraid.busy.\(container.id)")
                         .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textSecondaryDark))
                         .scaleEffect(0.7)
                         .frame(width: TVSizing.isTV ? 64 : 32, height: TVSizing.isTV ? 64 : 32)
@@ -60,8 +68,9 @@ struct DockerContainerCard: View {
                         action: {
                             performAction(onRestart)
                         },
-                        isEnabled: container.state.isRunning
+                        isEnabled: container.state.isRunning && capabilities.dockerAction("restart").permitsAttempt
                     )
+                    .accessibilityIdentifier("unraid.restart.\(container.id)")
 
                     // Start/Stop Button
                     if container.state.isRunning {
@@ -70,7 +79,8 @@ struct DockerContainerCard: View {
                             color: ColorPalette.warning,
                             action: {
                                 performAction(onStop)
-                            }
+                            },
+                            isEnabled: capabilities.dockerAction("stop").permitsAttempt
                         )
                     } else {
                         ActionButton(
@@ -78,7 +88,8 @@ struct DockerContainerCard: View {
                             color: ColorPalette.success,
                             action: {
                                 performAction(onStart)
-                            }
+                            },
+                            isEnabled: capabilities.dockerAction(container.state == .paused ? "unpause" : "start").permitsAttempt
                         )
                     }
                 }
@@ -211,6 +222,8 @@ struct ContainerGroupCard: View {
     let containers: [DockerContainer]
     var restartingContainerIds: Set<String> = []  // IDs of containers currently restarting
     var busyContainerIds: Set<String> = []
+    var capabilities = UnraidCapabilities()
+    var onInspect: ((DockerContainer) -> Void)? = nil
     let onStart: (DockerContainer) -> Void
     let onStop: (DockerContainer) -> Void
     let onRestart: (DockerContainer) -> Void
@@ -238,6 +251,8 @@ struct ContainerGroupCard: View {
                         container: container,
                         isRestarting: restartingContainerIds.contains(container.id),
                         isBusy: busyContainerIds.contains(container.id),
+                        capabilities: capabilities,
+                        onInspect: onInspect.map { inspect in { inspect(container) } },
                         onStart: { onStart(container) },
                         onStop: { onStop(container) },
                         onRestart: { onRestart(container) }

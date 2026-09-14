@@ -4,6 +4,7 @@ struct VMCard: View {
     let vm: VmDomain
     var isRestarting: Bool = false
     var isBusy: Bool = false
+    var capabilities = UnraidCapabilities()
     let onStart: () -> Void
     let onStop: () -> Void
     let onRestart: () -> Void
@@ -50,7 +51,7 @@ struct VMCard: View {
                         action: {
                             performAction(onRestart)
                         },
-                        isEnabled: vm.state.isRunning
+                        isEnabled: vm.state.isRunning && capabilities.vmAction("reboot").permitsAttempt
                     )
 
                     // Start/Stop Button
@@ -60,10 +61,11 @@ struct VMCard: View {
                             color: ColorPalette.warning,
                             action: {
                                 performAction(onStop)
-                            }
+                            },
+                            isEnabled: capabilities.vmAction("stop").permitsAttempt
                         )
                         .onLongPressGesture(minimumDuration: 1.0) {
-                            showForceStopConfirmation = true
+                            if capabilities.vmAction("forceStop").permitsAttempt { showForceStopConfirmation = true }
                         }
                     } else {
                         VmActionButton(
@@ -71,7 +73,8 @@ struct VMCard: View {
                             color: ColorPalette.success,
                             action: {
                                 performAction(onStart)
-                            }
+                            },
+                            isEnabled: vm.state != .shuttingDown && capabilities.vmAction(vm.state == .paused ? "resume" : "start").permitsAttempt
                         )
                     }
                 }
@@ -86,7 +89,7 @@ struct VMCard: View {
         )
         .confirmationDialog("Force Stop VM", isPresented: $showForceStopConfirmation, titleVisibility: .visible) {
             Button("Force Stop", role: .destructive) {
-                performAction(onForceStop)
+                if capabilities.vmAction("forceStop").permitsAttempt { performAction(onForceStop) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -155,7 +158,7 @@ private struct VmStateBadge: View {
             return ColorPalette.success
         case .paused, .suspended:
             return ColorPalette.warning
-        case .stopped, .idle:
+        case .stopped, .shuttingDown, .idle:
             return ColorPalette.textSecondaryDark
         case .crashed, .unknown:
             return ColorPalette.error
@@ -188,8 +191,10 @@ private struct VmActionButton: View {
 
 struct VMGroupCard: View {
     let vms: [VmDomain]
+    var stateAvailable = true
     var restartingVmIds: Set<String> = []
     var busyVmIds: Set<String> = []
+    var capabilities = UnraidCapabilities()
     let onStart: (VmDomain) -> Void
     let onStop: (VmDomain) -> Void
     let onRestart: (VmDomain) -> Void
@@ -207,7 +212,7 @@ struct VMGroupCard: View {
 
                 Spacer()
 
-                Text("\(runningCount)/\(vms.count) running")
+                Text(stateAvailable ? "\(runningCount)/\(vms.count) running" : "Status unavailable")
                     .font(AppTypography.caption2())
                     .foregroundColor(ColorPalette.textMutedDark)
             }
@@ -220,6 +225,7 @@ struct VMGroupCard: View {
                         vm: vm,
                         isRestarting: restartingVmIds.contains(vm.id),
                         isBusy: busyVmIds.contains(vm.id),
+                        capabilities: capabilities,
                         onStart: { onStart(vm) },
                         onStop: { onStop(vm) },
                         onRestart: { onRestart(vm) },

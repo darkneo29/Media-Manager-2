@@ -56,6 +56,10 @@ enum CalendarWeekdayLabels {
 }
 
 struct CalendarView: View {
+    var isEmbedded = false
+    var sharedNavigationPath: Binding<NavigationPath>? = nil
+    private var activeNavigationPath: Binding<NavigationPath> { sharedNavigationPath ?? $navigationPath }
+
     @ObservedObject private var libraryState = LibraryStateManager.shared
     @ObservedObject private var releaseRadar = ReleaseRadarService.shared
     @State private var selectedDate: Date = Date()
@@ -112,7 +116,7 @@ struct CalendarView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack(path: $navigationPath) {
+        AppNavigationContainer(isEmbedded: isEmbedded, path: activeNavigationPath) {
             #if os(tvOS)
             tvOSCalendarLayout
             #else
@@ -689,9 +693,9 @@ struct CalendarView: View {
     private func navigateToDetail(for event: CalendarEvent) {
         switch event.source {
         case .movie(let movie):
-            navigationPath.append(movie)
+            activeNavigationPath.wrappedValue.append(movie)
         case .tvShow(let show):
-            navigationPath.append(show)
+            activeNavigationPath.wrappedValue.append(show)
         }
     }
 

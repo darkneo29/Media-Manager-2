@@ -43,7 +43,7 @@ final class Media_ManagerUITests: XCTestCase {
 
         for (tab, title) in [("Downloads", "Downloads"), ("Calendar", "Calendar"), ("Unraid", "Server"), ("Settings", "Settings")] {
             app.tabBars.buttons["More"].tap()
-            let row = app.tables.cells.containing(.staticText, identifier: tab).firstMatch
+            let row = app.buttons.matching(identifier: "more.\(["Downloads": 4, "Calendar": 5, "Unraid": 6, "Settings": 7][tab]!)").firstMatch
             XCTAssertTrue(row.waitForExistence(timeout: 5))
             row.tap()
             XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
@@ -51,6 +51,8 @@ final class Media_ManagerUITests: XCTestCase {
             screenshot.name = tab
             screenshot.lifetime = .keepAlways
             add(screenshot)
+            XCTAssertEqual(app.navigationBars.count, 1)
+            if tab != "Settings" { app.navigationBars.buttons["More"].tap() }
         }
 
         let radarr = app.staticTexts["Radarr Server"]
@@ -58,6 +60,45 @@ final class Media_ManagerUITests: XCTestCase {
         radarr.tap()
         XCTAssertTrue(app.navigationBars["Radarr Settings"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.secureTextFields.firstMatch.exists)
+    }
+
+    @MainActor
+    func testSingleBackButtonAcrossSettings() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-radarrURL", "", "-sonarrURL", "", "-sabnzbURL", "", "-unraidURL", "", "-iCloudSyncEnabled", "NO"]
+        app.launch()
+        let isPad = UIDevice.current.userInterfaceIdiom == .pad
+        if isPad {
+            XCUIDevice.shared.orientation = .landscapeLeft
+            let settings = app.staticTexts["Settings"].firstMatch
+            XCTAssertTrue(settings.waitForExistence(timeout: 15))
+            settings.tap()
+        } else {
+            XCTAssertTrue(app.tabBars.buttons["More"].waitForExistence(timeout: 15))
+            app.tabBars.buttons["More"].tap()
+            app.buttons["more.7"].tap()
+        }
+        for (row, title) in [("Radarr Server", "Radarr Settings"), ("Sonarr Server", "Sonarr Settings"), ("SabNZB Server", "SabNZB Settings"), ("Unraid Server", "Unraid Settings"), ("TMDB", "TMDB Settings"), ("Add Defaults & Presets", "Add Defaults")] {
+            let link = app.staticTexts[row].firstMatch
+            for _ in 0..<4 { if link.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(link.isHittable)
+            link.tap()
+            let bar = app.navigationBars[title]
+            XCTAssertTrue(bar.waitForExistence(timeout: 5))
+            let back = bar.buttons["Settings"]
+            XCTAssertEqual(bar.buttons.matching(identifier: "Settings").count, 1)
+            if !isPad { XCTAssertEqual(app.navigationBars.count, 1) }
+            back.tap()
+            XCTAssertTrue(app.staticTexts["Radarr Server"].waitForExistence(timeout: 5))
+        }
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Single navigation bar - Settings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        if !isPad {
+            app.navigationBars.buttons["More"].tap()
+            XCTAssertTrue(app.buttons["more.4"].waitForExistence(timeout: 5))
+        }
     }
 
     @MainActor
@@ -268,3 +309,76 @@ final class Media_ManagerUITests: XCTestCase {
         }
     }
 }
+
+#if os(iOS)
+extension Media_ManagerUITests {
+    @MainActor
+    func testUnraidPartialSectionsAndContainerDiagnostics() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-partial"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["TEST TOWER"].waitForExistence(timeout: 15))
+        let details = app.buttons["unraid.details.server:plex"]
+        for _ in 0..<6 { if details.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(details.isHittable)
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "VM service unavailable")).firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Status unavailable"].exists)
+        XCTAssertFalse(app.staticTexts["0/0 running"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Unraid partial sections"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        details.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "Plex service started successfully")).firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "CPU: 12")).firstMatch.waitForExistence(timeout: 10))
+        let diagnostics = XCTAttachment(screenshot: app.screenshot())
+        diagnostics.name = "Unraid container diagnostics"
+        diagnostics.lifetime = .keepAlways
+        add(diagnostics)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(details.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testUnraidHardwareFailureKeepsHealthySectionsDuringRefresh() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-hardware-failure"]
+        app.launch()
+        let details = app.buttons["unraid.details.server:plex"]
+        XCTAssertTrue(details.waitForExistence(timeout: 15))
+        for _ in 0..<6 { if details.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(details.isHittable)
+        app.buttons["unraid.refresh"].tap()
+        // The fixture delays the failed hardware resolver for two seconds.
+        XCTAssertTrue(details.isHittable, "Refreshing unavailable hardware must retain healthy sections")
+        XCTAssertFalse(app.staticTexts["Connecting to server..."].exists)
+    }
+
+    @MainActor
+    func testUnraidViewerControlsAndLongCommandBusyState() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-viewer"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["TEST TOWER"].waitForExistence(timeout: 15))
+        var restart = app.buttons["unraid.restart.server:plex"]
+        for _ in 0..<6 { if restart.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(restart.exists)
+        XCTAssertFalse(restart.isEnabled)
+        app.terminate()
+        app.launchArguments = ["--unraid-integration-fixtures"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["TEST TOWER"].waitForExistence(timeout: 15))
+        restart = app.buttons["unraid.restart.server:plex"]
+        for _ in 0..<6 { if restart.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(restart.isEnabled)
+        restart.tap()
+        let busy = app.descendants(matching: .any)["unraid.busy.server:plex"]
+        XCTAssertTrue(busy.waitForExistence(timeout: 2))
+        Thread.sleep(forTimeInterval: 2.2)
+        XCTAssertTrue(busy.exists, "Busy state must outlive the old fixed two-second timer")
+        let finished = NSPredicate(format: "exists == false")
+        expectation(for: finished, evaluatedWith: busy)
+        waitForExpectations(timeout: 10)
+    }
+}
+#endif

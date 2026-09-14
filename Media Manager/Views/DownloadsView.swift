@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 
 struct DownloadsView: View {
+    var isEmbedded = false
     @ObservedObject private var configuration = ConfigurationManager.shared
 
     @State private var selectedTab = 0
@@ -112,7 +113,7 @@ struct DownloadsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        AppNavigationContainer(isEmbedded: isEmbedded) {
             ZStack {
                 ColorPalette.backgroundDark.ignoresSafeArea()
 

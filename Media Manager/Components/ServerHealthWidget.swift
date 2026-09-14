@@ -10,7 +10,8 @@ struct ServerHealthWidget: View {
     @State private var totalContainers: Int = 0
     @State private var isLoading = true
     @State private var hasError = false
-    @State private var retryCount = 0
+    @State private var sectionErrors: [String] = []
+    @State private var containersKnown = false
     @State private var isVisible = false
     @State private var loadRequestID = UUID()
 
@@ -18,8 +19,6 @@ struct ServerHealthWidget: View {
     var showHeader: Bool = false
     var onTap: (() -> Void)?
 
-    private let maxRetries = 3
-    private let retryDelaySeconds: UInt64 = 10
 
     var isConfigured: Bool {
         configuration.isUnraidConfigured
@@ -49,7 +48,6 @@ struct ServerHealthWidget: View {
                 // Widget card (show loading/error/content)
                 Button {
                     if hasError {
-                        retryCount = 0
                         hasError = false
                         loadRequestID = UUID()
                     } else {
@@ -75,7 +73,6 @@ struct ServerHealthWidget: View {
                 isVisible = true
                 // If we had an error, retry on appear
                 if hasError {
-                    retryCount = 0
                     hasError = false
                     loadRequestID = UUID()
                 }
@@ -139,6 +136,9 @@ struct ServerHealthWidget: View {
                     .foregroundColor(ColorPalette.textMutedDark)
             }
 
+            ForEach(sectionErrors, id: \.self) { message in
+                Text(message).font(AppTypography.caption2()).foregroundColor(ColorPalette.warning)
+            }
             if let array = array {
                 // Storage Progress Bar
                 GeometryReader { geometry in
@@ -165,10 +165,14 @@ struct ServerHealthWidget: View {
 
                     Spacer()
 
-                    Text("\(runningContainers)/\(totalContainers) containers")
+                    Text(containersKnown ? "\(runningContainers)/\(totalContainers) containers" : "Containers unavailable")
                         .font(AppTypography.caption2())
                         .foregroundColor(ColorPalette.textMutedDark)
                 }
+            } else if containersKnown {
+                Text("\(runningContainers)/\(totalContainers) containers")
+                    .font(AppTypography.caption2())
+                    .foregroundColor(ColorPalette.textMutedDark)
             }
         }
         .padding(AppSpacing.md)
@@ -195,62 +199,28 @@ struct ServerHealthWidget: View {
 
     private func loadData() async {
         isLoading = true
-        retryCount = 0
-
-        while !Task.isCancelled {
-            do {
-                let data = try await UnraidService.shared.fetchAllData()
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.systemInfo = data.system
-                    self.array = data.array
-                    self.runningContainers = data.containers.filter { $0.state.isRunning }.count
-                    self.totalContainers = data.containers.count
-                    self.isLoading = false
-                    self.hasError = false
-                    self.retryCount = 0
-                }
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-
-                if retryCount >= maxRetries || !UnraidService.shouldRetryRead(error) {
-                    await MainActor.run {
-                        self.isLoading = false
-                        self.hasError = true
-                    }
-                    return
-                }
-
-                retryCount += 1
-                let delay = retryCount * Int(retryDelaySeconds)
-                do {
-                    try await Task.sleep(for: .seconds(delay))
-                } catch {
-                    return
-                }
-            }
-        }
+        await refreshData()
+        if !Task.isCancelled { isLoading = false }
     }
 
     private func refreshData() async {
-        // Silent refresh - don't show loading state
         do {
-            let data = try await UnraidService.shared.fetchAllData()
+            let data = try await UnraidService.shared.fetchOverview()
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self.systemInfo = data.system
-                self.array = data.array
-                self.runningContainers = data.containers.filter { $0.state.isRunning }.count
-                self.totalContainers = data.containers.count
-                self.hasError = false
-                self.retryCount = 0
-            }
+            systemInfo = data.system.value
+            array = data.storage.value
+            runningContainers = data.containers.value?.filter { $0.state.isRunning }.count ?? 0
+            totalContainers = data.containers.value?.count ?? 0
+            containersKnown = data.containers.value != nil && data.containers.error == nil
+            sectionErrors = data.errors
+            hasError = data.system.value == nil && data.storage.value == nil && data.containers.value == nil
         } catch {
             guard !Task.isCancelled else { return }
             hasError = true
+            sectionErrors = [error.localizedDescription]
         }
     }
+
 }
 
 #Preview {

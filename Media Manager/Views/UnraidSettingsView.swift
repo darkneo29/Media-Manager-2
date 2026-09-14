@@ -12,6 +12,7 @@ struct UnraidSettingsView: View {
 
     @State private var connectionStatus: ConnectionStatus = .idle
     @State private var connectedHostname: String?
+    @State private var testedCapabilities: UnraidCapabilities?
     @State private var connectedVersion: String?
     @State private var resetTask: Task<Void, Never>?
     @State private var testAttemptId = UUID()
@@ -124,6 +125,8 @@ struct UnraidSettingsView: View {
                 if case .failure(let message) = connectionStatus {
                     TVStatusMessage(message: message, type: .error)
                 }
+
+                if let testedCapabilities { UnraidAccessSummary(capabilities: testedCapabilities) }
 
                 // Display Preferences Section
                 TVSettingsSection(title: "Display Preferences") {
@@ -291,6 +294,8 @@ struct UnraidSettingsView: View {
                 .disabled(isTesting)
                 .padding(.horizontal, AppSpacing.md)
 
+                if let testedCapabilities { UnraidAccessSummary(capabilities: testedCapabilities).padding(.horizontal, AppSpacing.md) }
+
                 // Connection Status Messages
                 if case .success = connectionStatus, let hostname = connectedHostname {
                     HStack(spacing: AppSpacing.xs) {
@@ -434,6 +439,7 @@ struct UnraidSettingsView: View {
     private func invalidateConnectionTest() {
         testAttemptId = UUID()
         resetTask?.cancel()
+        testedCapabilities = nil
         connectedHostname = nil
         connectedVersion = nil
         connectionStatus = .idle
@@ -481,6 +487,7 @@ struct UnraidSettingsView: View {
         resetTask?.cancel()
 
         connectionStatus = .testing
+        testedCapabilities = nil
         connectedHostname = nil
         connectedVersion = nil
         let currentAttempt = UUID()
@@ -494,6 +501,9 @@ struct UnraidSettingsView: View {
                     url: testedURL,
                     apiKey: testedAPIKey
                 )
+                let endpoint = try UnraidService.graphQLURL(from: testedURL)
+                let inspector = UnraidService(credentials: { (endpoint, testedAPIKey) })
+                let capabilities = try await inspector.fetchCapabilities(forceRefresh: true)
                 await MainActor.run {
                     guard testAttemptId == currentAttempt,
                           editingURL == testedURL,
@@ -501,6 +511,7 @@ struct UnraidSettingsView: View {
                     do {
                         try configuration.saveUnraid(url: testedURL, apiKey: testedAPIKey)
                         saveDisplayPreferences()
+                        testedCapabilities = capabilities
                         connectedHostname = systemInfo.hostname
                         connectedVersion = systemInfo.version
                         connectionStatus = .success
