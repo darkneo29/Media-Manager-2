@@ -3,12 +3,12 @@ import SwiftUI
 struct VMCard: View {
     let vm: VmDomain
     var isRestarting: Bool = false
+    var isBusy: Bool = false
     let onStart: () -> Void
     let onStop: () -> Void
     let onRestart: () -> Void
     let onForceStop: () -> Void
 
-    @State private var isPerformingAction = false
     @State private var showForceStopConfirmation = false
 
     /// The displayed state - shows restarting if isRestarting is true
@@ -38,7 +38,7 @@ struct VMCard: View {
 
             // Action Buttons
             HStack(spacing: AppSpacing.xs) {
-                if isPerformingAction || isRestarting {
+                if isBusy || isRestarting {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textSecondaryDark))
                         .scaleEffect(0.7)
@@ -114,13 +114,9 @@ struct VMCard: View {
         }
     }
 
-    private func performAction(_ action: @escaping () -> Void) {
-        isPerformingAction = true
+    private func performAction(_ action: () -> Void) {
+        guard !isBusy && !isRestarting else { return }
         action()
-        // Reset after a delay (the parent view should refresh the data)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isPerformingAction = false
-        }
     }
 }
 
@@ -193,6 +189,7 @@ private struct VmActionButton: View {
 struct VMGroupCard: View {
     let vms: [VmDomain]
     var restartingVmIds: Set<String> = []
+    var busyVmIds: Set<String> = []
     let onStart: (VmDomain) -> Void
     let onStop: (VmDomain) -> Void
     let onRestart: (VmDomain) -> Void
@@ -222,6 +219,7 @@ struct VMGroupCard: View {
                     VMCard(
                         vm: vm,
                         isRestarting: restartingVmIds.contains(vm.id),
+                        isBusy: busyVmIds.contains(vm.id),
                         onStart: { onStart(vm) },
                         onStop: { onStop(vm) },
                         onRestart: { onRestart(vm) },

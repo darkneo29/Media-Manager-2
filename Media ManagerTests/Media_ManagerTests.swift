@@ -699,3 +699,172 @@ struct Media_ManagerTests {
         store.defaults.removePersistentDomain(forName: store.suiteName)
     }
 }
+
+private final class UnraidMockProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var replies: [(Int, String)] = []
+    nonisolated(unsafe) static var requests: [URLRequest] = []
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.requests.append(request)
+        guard !Self.replies.isEmpty else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        let (status, body) = Self.replies.removeFirst()
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite(.serialized)
+struct UnraidCommandTests {
+    @Test @MainActor
+    func commandsPreserveIDsAndHandleCompatibilityFailures() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnraidMockProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let service = UnraidService(session: session, credentials: {
+            (URL(string: "https://unraid.invalid/graphql")!, "test-key")
+        })
+        let success = #"{"data":{"docker":{"result":{"id":"docker:abc_123","state":"RUNNING","status":"Up"}}}}"#
+        UnraidMockProtocol.requests = []
+        UnraidMockProtocol.replies = [(200, success)]
+        try await service.restartContainer(id: "docker:abc_123")
+        #expect(UnraidMockProtocol.requests.count == 1)
+        let request = try #require(UnraidMockProtocol.requests.first)
+        var body = request.httpBody
+        if body == nil, let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            var data = Data()
+            while stream.hasBytesAvailable {
+                let count = stream.read(&bytes, maxLength: bytes.count)
+                if count <= 0 { break }
+                data.append(contentsOf: bytes.prefix(count))
+            }
+            body = data
+        }
+        let requestBody = try #require(body)
+        let json = try #require(JSONSerialization.jsonObject(with: requestBody) as? [String: Any])
+        #expect((json["variables"] as? [String: String])?["id"] == "docker:abc_123")
+        #expect((json["query"] as? String)?.contains("result: restart(id: $id)") == true)
+        #expect(request.timeoutInterval == 120)
+
+        UnraidMockProtocol.requests = []
+        UnraidMockProtocol.replies = [
+            (400, #"{"errors":[{"message":"Cannot query field \"restart\" on type \"DockerMutations\"."}]}"#),
+            (200, success), (200, success)
+        ]
+        try await service.restartContainer(id: "docker:abc_123")
+        #expect(UnraidMockProtocol.requests.count == 3)
+
+        for failure in [
+            #"{"errors":[{"message":"Forbidden"}]}"#,
+            #"{"data":null}"#,
+            #"{"data":{"docker":{}},"errors":[{"message":"Operation failed"}]}"#
+        ] {
+            UnraidMockProtocol.requests = []
+            UnraidMockProtocol.replies = [(200, failure)]
+            await #expect(throws: (any Error).self) {
+                try await service.restartContainer(id: "docker:abc_123")
+            }
+            #expect(UnraidMockProtocol.requests.count == 1)
+        }
+        UnraidMockProtocol.replies = [(200, #"{"data":{"vm":{"result":false}}}"#)]
+        await #expect(throws: (any Error).self) {
+            try await service.startVm(id: "vm:example-uuid")
+        }
+    }
+}
+
+extension UnraidCommandTests {
+    private static var snapshot: String {
+        #"{"data":{"vars":{"version":"7.3.0"},"info":{"os":{"hostname":"tower","uptime":"2026-09-01T00:00:00Z"},"cpu":{"brand":"CPU","cores":8}},"metrics":{"cpu":{"percentTotal":12.5},"memory":{"total":"34359738368","used":8589934592,"free":"25769803776","available":"30000000000","percentTotal":12.7}},"array":{"state":"STOPPED","capacity":{"kilobytes":{"total":"1000","used":"250","free":"750"}},"disks":[{"id":"disk:1","name":null,"size":null,"status":null,"temp":null,"type":"DATA"}],"caches":[],"parities":[],"boot":{"id":"disk:boot","name":"boot","size":"1024","status":"DISK_OK","type":"BOOT"}},"docker":{"containers":[]},"vms":{"domains":[{"id":"vm:123","name":null,"state":"SHUTOFF"}]}}}"#
+    }
+
+    @Test @MainActor
+    func snapshotHandlesNullableFieldsAndScopesCacheToCredentials() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnraidMockProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        var server = URL(string: "https://tower.invalid/graphql")!
+        var key = "first-key"
+        let service = UnraidService(session: session, credentials: { (server, key) })
+        UnraidMockProtocol.requests = []
+        UnraidMockProtocol.replies = [(200, Self.snapshot)]
+        async let first = service.fetchAllData()
+        async let second = service.fetchAllData()
+        let (data, other) = try await (first, second)
+        #expect(UnraidMockProtocol.requests.count == 1)
+        #expect(data.system == other.system)
+        #expect(data.system.memory.total == 34359738368)
+        #expect(data.system.memory.available == 30000000000)
+        #expect(data.array.disks.first?.size == 0)
+        #expect(data.array.disks.first?.status == .unknown)
+        #expect(data.array.disks.last?.type == .flash)
+        #expect(data.array.capacity.total == 1_000_000)
+        #expect(data.vms.first?.id == "vm:123")
+        #expect(data.vms.first?.name == "Unnamed VM")
+        _ = try await service.fetchAllData()
+        #expect(UnraidMockProtocol.requests.count == 1)
+
+        UnraidMockProtocol.replies = [(200, Self.snapshot)]
+        _ = try await service.fetchAllData(forceRefresh: true)
+        #expect(UnraidMockProtocol.requests.count == 2)
+        key = "replacement-key"
+        UnraidMockProtocol.replies = [(200, Self.snapshot)]
+        _ = try await service.fetchAllData()
+        #expect(UnraidMockProtocol.requests.count == 3)
+        #expect(UnraidMockProtocol.requests.last?.value(forHTTPHeaderField: "x-api-key") == key)
+        server = URL(string: "https://other-tower.invalid/graphql")!
+        UnraidMockProtocol.replies = [(200, Self.snapshot)]
+        _ = try await service.fetchAllData()
+        #expect(UnraidMockProtocol.requests.count == 4)
+        #expect(UnraidMockProtocol.requests.last?.url == server)
+        await service.invalidateCache()
+        UnraidMockProtocol.replies = [(200, Self.snapshot)]
+        _ = try await service.fetchAllData()
+        #expect(UnraidMockProtocol.requests.count == 5)
+    }
+
+    @Test @MainActor
+    func endpointsRetryPolicyAndOverflowAreSafe() throws {
+        #expect(try UnraidService.graphQLURL(from: " https://tower:8443/ ").absoluteString == "https://tower:8443/graphql")
+        #expect(try UnraidService.graphQLURL(from: "https://tower/proxy/graphql/").absoluteString == "https://tower/proxy/graphql")
+        #expect(try UnraidService.graphQLURL(from: "http://[::1]:8080").absoluteString == "http://[::1]:8080/graphql")
+        for invalid in ["tower", "file:///tmp/server", "https://user:password@tower", "https://tower?key=secret", "https://tower/#fragment"] {
+            #expect(throws: (any Error).self) { try UnraidService.graphQLURL(from: invalid) }
+        }
+        #expect(!UnraidService.shouldRetryRead(UnraidError.unauthorized))
+        #expect(!UnraidService.shouldRetryRead(UnraidError.forbidden))
+        #expect(!UnraidService.shouldRetryRead(UnraidError.graphQLError("Unsupported field")))
+        #expect(!UnraidService.shouldRetryRead(CancellationError()))
+        #expect(UnraidService.shouldRetryRead(UnraidError.httpError(429)))
+        #expect(UnraidService.shouldRetryRead(UnraidError.httpError(503)))
+        #expect(UnraidService.shouldRetryRead(URLError(.timedOut)))
+        #expect(UnraidService.saturatingKilobytes(Int64.max) == Int64.max)
+        #expect(UnraidService.saturatingKilobytes(-1) == 0)
+    }
+}
+
+extension UnraidCommandTests {
+    @Test @MainActor
+    func missingMetricsRemainUnavailable() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [UnraidMockProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+        let service = UnraidService(session: session)
+        UnraidMockProtocol.replies = [(200, #"{"data":{"vars":{"version":"7.3.0"},"info":{"os":{"hostname":"tower","uptime":"2026-09-01T00:00:00Z"},"cpu":{"brand":"CPU","cores":8}},"metrics":null}}"#)]
+        let info = try await service.testConnection(url: "https://tower.invalid/graphql/", apiKey: "test-key")
+        #expect(info.cpu.usage == nil)
+        #expect(info.memory.total == 0)
+        #expect(info.memory.usagePercentage == 0)
+    }
+}

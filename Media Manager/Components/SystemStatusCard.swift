@@ -57,7 +57,8 @@ struct SystemStatusCard: View {
                 StatMiniCard(
                     icon: "cpu",
                     label: "CPU",
-                    value: "\(systemInfo.cpu.cores) cores",
+                    value: systemInfo.cpu.usage.map { "\(Int($0))% · \(systemInfo.cpu.cores) cores" } ?? "Unavailable",
+                    progress: systemInfo.cpu.usage.map { $0 / 100 },
                     color: ColorPalette.primary
                 )
 
@@ -66,7 +67,7 @@ struct SystemStatusCard: View {
                     icon: "memorychip",
                     label: "RAM",
                     value: formatMemoryUsage(),
-                    progress: systemInfo.memory.usagePercentage / 100,
+                    progress: systemInfo.memory.total > 0 ? systemInfo.memory.usagePercentage / 100 : nil,
                     color: ColorPalette.secondary
                 )
 
@@ -98,6 +99,7 @@ struct SystemStatusCard: View {
     }
 
     private func formatMemoryUsage() -> String {
+        guard systemInfo.memory.total > 0 else { return "Unavailable" }
         let percentage = Int(systemInfo.memory.usagePercentage)
         return "\(percentage)%"
     }

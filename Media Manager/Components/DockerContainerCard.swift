@@ -3,11 +3,11 @@ import SwiftUI
 struct DockerContainerCard: View {
     let container: DockerContainer
     var isRestarting: Bool = false  // External override to show restarting state
+    var isBusy: Bool = false
     let onStart: () -> Void
     let onStop: () -> Void
     let onRestart: () -> Void
 
-    @State private var isPerformingAction = false
 
     /// The displayed state - shows .restarting if isRestarting is true
     private var displayedState: ContainerState {
@@ -48,7 +48,7 @@ struct DockerContainerCard: View {
 
             // Action Buttons
             HStack(spacing: AppSpacing.xs) {
-                if isPerformingAction {
+                if isBusy || isRestarting {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: ColorPalette.textSecondaryDark))
                         .scaleEffect(0.7)
@@ -113,13 +113,9 @@ struct DockerContainerCard: View {
         }
     }
 
-    private func performAction(_ action: @escaping () -> Void) {
-        isPerformingAction = true
+    private func performAction(_ action: () -> Void) {
+        guard !isBusy && !isRestarting else { return }
         action()
-        // Reset after a delay (the parent view should refresh the data)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            isPerformingAction = false
-        }
     }
 }
 
@@ -214,6 +210,7 @@ struct ContainerGroupCard: View {
     let title: String
     let containers: [DockerContainer]
     var restartingContainerIds: Set<String> = []  // IDs of containers currently restarting
+    var busyContainerIds: Set<String> = []
     let onStart: (DockerContainer) -> Void
     let onStop: (DockerContainer) -> Void
     let onRestart: (DockerContainer) -> Void
@@ -240,6 +237,7 @@ struct ContainerGroupCard: View {
                     DockerContainerCard(
                         container: container,
                         isRestarting: restartingContainerIds.contains(container.id),
+                        isBusy: busyContainerIds.contains(container.id),
                         onStart: { onStart(container) },
                         onStop: { onStop(container) },
                         onRestart: { onRestart(container) }

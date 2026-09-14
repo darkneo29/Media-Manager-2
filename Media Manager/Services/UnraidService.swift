@@ -17,21 +17,12 @@ class UnraidService {
         return formatter
     }()
 
-    private static let numberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter
-    }()
-
-    private static let bytesRegex: NSRegularExpression? = {
-        try? NSRegularExpression(pattern: #"^([\d.,]+)\s*([KMGTP]?B?)$"#, options: [])
-    }()
-
     // MARK: - Request Cache (deduplication and caching)
 
     private actor CacheManager {
         private var cachedData: (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain])?
         private var cacheTimestamp: Date?
+        private var context: RequestContext?
         private struct InFlightRequest {
             let generation: UInt64
             let task: Task<UnraidAllData, Error>
@@ -58,9 +49,14 @@ class UnraidService {
 
         typealias UnraidAllData = (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain])
 
-        func getOrCreateFetchTask(factory: @Sendable @escaping () async throws -> UnraidAllData) -> Task<UnraidAllData, Error> {
-            if let existing = inFlightRequest {
-                return existing.task
+        func getOrCreateFetchTask(context: RequestContext, forceRefresh: Bool, factory: @Sendable @escaping () async throws -> UnraidAllData) -> Task<UnraidAllData, Error> {
+            if self.context != context {
+                invalidateCache()
+                self.context = context
+            }
+            if let existing = inFlightRequest { return existing.task }
+            if !forceRefresh, let cached = getCachedData() {
+                return Task { cached }
             }
 
             generation &+= 1
@@ -113,22 +109,76 @@ class UnraidService {
         config.unraidAPIKey
     }
 
-    /// Sanitizes an ID for use in GraphQL string interpolation to prevent injection
-    private func sanitizeId(_ id: String) -> String {
-        id.filter { $0.isLetter || $0.isNumber || $0 == "-" }
-    }
+    private let session: URLSession
+    private let credentials: (() -> (url: URL, apiKey: String))?
 
-    private init() {}
+    init(session: URLSession = .shared, credentials: (() -> (url: URL, apiKey: String))? = nil) {
+        self.session = session
+        self.credentials = credentials
+    }
 
     // MARK: - GraphQL Endpoint
 
-    private func getGraphQLURL() -> URL? {
-        let baseURL = getBaseURL()
-        guard !baseURL.isEmpty else { return nil }
-        let cleanURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        return URL(string: "\(cleanURL)/graphql")
+    static func shouldRetryRead(_ error: Error) -> Bool {
+        if case UnraidError.httpError(let status) = error { return status == 429 || (500...599).contains(status) }
+        guard let error = error as? URLError else { return false }
+        return [.timedOut, .cannotFindHost, .cannotConnectToHost, .networkConnectionLost,
+                .dnsLookupFailed, .notConnectedToInternet].contains(error.code)
     }
+
+    static func graphQLURL(from value: String) throws -> URL {
+        guard var components = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else { throw UnraidError.invalidURL }
+        components.scheme = scheme
+        var path = components.path
+        while path.hasSuffix("/") { path.removeLast() }
+        if !path.hasSuffix("/graphql") { path += "/graphql" }
+        components.path = path
+        guard let url = components.url else { throw UnraidError.invalidURL }
+        return url
+    }
+
+    private struct RequestContext: Equatable, Sendable {
+        let url: URL
+        let apiKey: String
+    }
+
+    private func requestContext() throws -> RequestContext {
+        if let credentials {
+            let value = credentials()
+            return RequestContext(url: value.url, apiKey: value.apiKey)
+        }
+        guard config.isUnraidConfigured else { throw UnraidError.notConfigured }
+        return RequestContext(url: try Self.graphQLURL(from: getBaseURL()), apiKey: getAPIKey())
+    }
+
+    private static let systemFields = """
+    vars { version }
+    info { os { hostname uptime } cpu { brand cores } }
+    metrics { cpu { percentTotal } memory { total used free available percentTotal } }
+    """
+
+    private static let arrayFields = """
+    array {
+        state
+        capacity { kilobytes { total used free } }
+        disks { id name size fsUsed status temp type device }
+        caches { id name size fsUsed status temp type device }
+        parities { id name size fsUsed status temp type device }
+        boot { id name size fsUsed status temp type device }
+    }
+    """
+
+    private static let dockerFields = """
+    docker { containers { id names image state status autoStart } }
+    """
+
+    private static let vmFields = """
+    vms { domains { id name state } }
+    """
 
     // MARK: - Public API Methods
 
@@ -137,24 +187,10 @@ class UnraidService {
         // Unraid 7.2+ schema: version is in vars, uptime is ISO8601 boot timestamp
         // metrics provides real-time CPU and memory usage
         // cpu.brand contains the actual CPU name (e.g., "Ryzen 7 2700")
-        let query = """
-        query {
-            vars { version }
-            online
-            info {
-                os { hostname uptime }
-                cpu { brand cores }
-            }
-            metrics {
-                cpu { percentTotal }
-                memory { total used free available percentTotal }
-            }
-        }
-        """
+        let query = "query { \(Self.systemFields) }"
 
         struct SystemInfoWithMetrics: Codable {
             let vars: VarsData
-            let online: Bool
             let info: TestInfoData
             let metrics: MetricsData?
         }
@@ -168,83 +204,12 @@ class UnraidService {
             throw UnraidError.noData
         }
 
-        return UnraidSystemInfo(
-            hostname: data.info.os.hostname,
-            version: data.vars.version,
-            uptime: parseUptimeFromBootTime(data.info.os.uptime),
-            cpu: UnraidCPU(
-                model: data.info.cpu.brand ?? data.info.cpu.model ?? "Unknown",
-                cores: data.info.cpu.cores.intValue,
-                usage: data.metrics?.cpu?.percentTotal ?? 0,
-                temperature: nil
-            ),
-            memory: UnraidMemory(
-                total: data.metrics?.memory?.total ?? 0,
-                used: data.metrics?.memory?.used ?? 0,
-                free: data.metrics?.memory?.free ?? 0,
-                available: data.metrics?.memory?.available,
-                percentTotalFromAPI: data.metrics?.memory?.percentTotal
-            )
-        )
+        return parseSystemInfo(info: data.info, version: data.vars.version, metrics: data.metrics)
     }
 
     /// Fetches array status including capacity and disk information
     func fetchArray() async throws -> UnraidArray {
-        let query = """
-        query {
-            array {
-                state
-                capacity {
-                    kilobytes { total used free }
-                    disks { total used free }
-                }
-                disks {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                caches {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                parities {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                boot {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-            }
-        }
-        """
+        let query = "query { \(Self.arrayFields) }"
 
         let response: GraphQLResponse<ArrayQueryResponse> = try await executeQuery(query)
 
@@ -261,20 +226,7 @@ class UnraidService {
     /// Fetches all Docker containers
     func fetchDockerContainers() async throws -> [DockerContainer] {
         // Try the nested docker.containers query first (Unraid 7.1)
-        let query = """
-        query {
-            docker {
-                containers {
-                    id
-                    names
-                    image
-                    state
-                    status
-                    autoStart
-                }
-            }
-        }
-        """
+        let query = "query { \(Self.dockerFields) }"
 
         struct DockerResponse: Codable {
             let docker: DockerData?
@@ -290,120 +242,29 @@ class UnraidService {
             return containers.map { parseContainer(from: $0) }
         }
 
-        // If that fails, the API might not support docker queries
-        #if DEBUG
-        if let error = response.errors?.first {
-            print("Docker query failed: \(error.message)")
-        }
-        #endif
-
-        return []
+        throw UnraidError.noData
     }
 
     /// Fetches all data at once for efficiency with caching and request deduplication
-    func fetchAllData() async throws -> (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]) {
-        // Check cache first
-        if let cached = await cacheManager.getCachedData() {
-            return cached
+    func fetchAllData(forceRefresh: Bool = false) async throws -> (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]) {
+        let context = try requestContext()
+        let task = await cacheManager.getOrCreateFetchTask(context: context, forceRefresh: forceRefresh) { [self] in
+            try await self.performFetchAllData(context: context)
         }
-
-        // Atomically get or create the fetch task (prevents race condition)
-        let task = await cacheManager.getOrCreateFetchTask { [self] in
-            try await self.performFetchAllData()
-        }
-        return try await task.value
+        let result = try await task.value
+        try Task.checkCancellation()
+        guard try requestContext() == context else { throw CancellationError() }
+        return result
     }
 
     /// Internal method that performs the actual fetch
-    private func performFetchAllData() async throws -> (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]) {
+    private func performFetchAllData(context: RequestContext) async throws -> (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]) {
         // Unraid 7.2+ schema with version from vars, fsUsed/fsFree for disks, and metrics for CPU/memory
         // cpu.brand contains the actual CPU name (e.g., "Ryzen 7 2700")
-        let query = """
-        query {
-            vars { version }
-            online
-            info {
-                os { hostname uptime }
-                cpu { brand cores }
-            }
-            metrics {
-                cpu { percentTotal }
-                memory { total used free available percentTotal }
-            }
-            array {
-                state
-                capacity {
-                    kilobytes { total used free }
-                    disks { total used free }
-                }
-                disks {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                caches {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                parities {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                boot {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-            }
-            docker {
-                containers {
-                    id
-                    names
-                    image
-                    state
-                    status
-                    autoStart
-                }
-            }
-            vms {
-                domains {
-                    name
-                    uuid
-                    state
-                }
-            }
-        }
-        """
+        let query = "query { \(Self.systemFields) \(Self.arrayFields) \(Self.dockerFields) \(Self.vmFields) }"
 
         struct CombinedResponse: Codable {
             let vars: VarsData
-            let online: Bool
             let info: TestInfoData
             let metrics: MetricsData?
             let array: ArrayData
@@ -415,37 +276,11 @@ class UnraidService {
             let containers: [ContainerData]?
         }
 
-        let response: GraphQLResponse<CombinedResponse> = try await executeQuery(query)
+        let response: GraphQLResponse<CombinedResponse> = try await executeQuery(query, context: context)
 
-        guard let data = response.data else {
-            if let error = response.errors?.first {
-                // If docker query fails, try without it
-                #if DEBUG
-                print("Combined query failed, trying without docker: \(error.message)")
-                #endif
-                return try await fetchAllDataWithoutDocker()
-            }
-            throw UnraidError.noData
-        }
+        guard let data = response.data else { throw UnraidError.noData }
 
-        let systemInfo = UnraidSystemInfo(
-            hostname: data.info.os.hostname,
-            version: data.vars.version,
-            uptime: parseUptimeFromBootTime(data.info.os.uptime),
-            cpu: UnraidCPU(
-                model: data.info.cpu.brand ?? data.info.cpu.model ?? "Unknown",
-                cores: data.info.cpu.cores.intValue,
-                usage: data.metrics?.cpu?.percentTotal ?? 0,
-                temperature: nil
-            ),
-            memory: UnraidMemory(
-                total: data.metrics?.memory?.total ?? 0,
-                used: data.metrics?.memory?.used ?? 0,
-                free: data.metrics?.memory?.free ?? 0,
-                available: data.metrics?.memory?.available,
-                percentTotalFromAPI: data.metrics?.memory?.percentTotal
-            )
-        )
+        let systemInfo = parseSystemInfo(info: data.info, version: data.vars.version, metrics: data.metrics)
         let array = parseArray(from: data.array)
         let containers = data.docker?.containers?.map { parseContainer(from: $0) } ?? []
         let vms = data.vms?.domains?.map { parseVm(from: $0) } ?? []
@@ -458,291 +293,96 @@ class UnraidService {
         await cacheManager.invalidateCache()
     }
 
-    /// Fallback method without docker query
-    private func fetchAllDataWithoutDocker() async throws -> (system: UnraidSystemInfo, array: UnraidArray, containers: [DockerContainer], vms: [VmDomain]) {
-        let query = """
-        query {
-            vars { version }
-            online
-            info {
-                os { hostname uptime }
-                cpu { brand cores }
-            }
-            metrics {
-                cpu { percentTotal }
-                memory { total used free available percentTotal }
-            }
-            array {
-                state
-                capacity {
-                    kilobytes { total used free }
-                    disks { total used free }
-                }
-                disks {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                caches {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                parities {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-                boot {
-                    id
-                    name
-                    size
-                    fsUsed
-                    fsFree
-                    status
-                    temp
-                    type
-                    device
-                }
-            }
-            vms {
-                domains {
-                    name
-                    uuid
-                    state
-                }
-            }
-        }
-        """
-
-        struct SimpleResponse: Codable {
-            let vars: VarsData
-            let online: Bool
-            let info: TestInfoData
-            let metrics: MetricsData?
-            let array: ArrayData
-            let vms: VmsData?
-        }
-
-        let response: GraphQLResponse<SimpleResponse> = try await executeQuery(query)
-
-        guard let data = response.data else {
-            if let error = response.errors?.first {
-                throw UnraidError.graphQLError(error.message)
-            }
-            throw UnraidError.noData
-        }
-
-        let systemInfo = UnraidSystemInfo(
-            hostname: data.info.os.hostname,
-            version: data.vars.version,
-            uptime: parseUptimeFromBootTime(data.info.os.uptime),
-            cpu: UnraidCPU(
-                model: data.info.cpu.brand ?? data.info.cpu.model ?? "Unknown",
-                cores: data.info.cpu.cores.intValue,
-                usage: data.metrics?.cpu?.percentTotal ?? 0,
-                temperature: nil
-            ),
-            memory: UnraidMemory(
-                total: data.metrics?.memory?.total ?? 0,
-                used: data.metrics?.memory?.used ?? 0,
-                free: data.metrics?.memory?.free ?? 0,
-                available: data.metrics?.memory?.available,
-                percentTotalFromAPI: data.metrics?.memory?.percentTotal
-            )
-        )
-        let array = parseArray(from: data.array)
-        let vms = data.vms?.domains?.map { parseVm(from: $0) } ?? []
-
-        return (systemInfo, array, [], vms)
-    }
-
     // MARK: - Docker Container Actions
 
-    /// Starts a Docker container
     func startContainer(id: String) async throws {
-        // Invalidate cache before mutation
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            docker {
-                start(id: "\(safeId)") {
-                    id
-                    state
-                    status
-                }
-            }
-        }
-        """
-
-        let _: GraphQLResponse<DockerMutationResponse> = try await executeQuery(mutation)
+        try await performDockerAction("start", id: id, context: requestContext())
     }
 
-    /// Stops a Docker container
+    func resumeContainer(id: String) async throws {
+        try await performDockerAction("unpause", id: id, context: requestContext())
+    }
+
     func stopContainer(id: String) async throws {
-        // Invalidate cache before mutation
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            docker {
-                stop(id: "\(safeId)") {
-                    id
-                    state
-                    status
-                }
-            }
-        }
-        """
-
-        let _: GraphQLResponse<DockerMutationResponse> = try await executeQuery(mutation)
+        try await performDockerAction("stop", id: id, context: requestContext())
     }
 
-    /// Restarts a Docker container (stop + start since no direct restart mutation)
     func restartContainer(id: String) async throws {
-        // Invalidate cache before mutations
-        await invalidateCache()
+        let context = try requestContext()
+        do {
+            try await performDockerAction("restart", id: id, context: context)
+        } catch UnraidError.graphQLError(let message) where Self.isMissingRestartField(message) {
+            // API releases before 4.36 lack restart. Only fall back on schema
+            // validation errors; retrying after a timeout could restart twice.
+            try await performDockerAction("stop", id: id, context: context)
+            do {
+                try await performDockerAction("start", id: id, context: context)
+            } catch {
+                throw UnraidError.graphQLError("Container stopped, but could not be started again: \(error.localizedDescription)")
+            }
+        }
+    }
 
-        // Unraid 7.2 doesn't have a restart mutation, so we stop then start
-        try await stopContainer(id: id)
-        // Small delay to ensure container is fully stopped
-        try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
-        try await startContainer(id: id)
+    static func isMissingRestartField(_ message: String) -> Bool {
+        message.contains("Cannot query field \"restart\" on type \"DockerMutations\"")
+    }
+
+    private struct DockerActionResponse: Codable {
+        let docker: Result
+        struct Result: Codable { let result: ContainerMutationResult }
+    }
+
+    private func performDockerAction(_ action: String, id: String, context: RequestContext) async throws {
+        await invalidateCache()
+        do {
+            let response: GraphQLResponse<DockerActionResponse> = try await executeQuery(
+                "mutation($id: PrefixedID!) { docker { result: \(action)(id: $id) { id state status } } }",
+                variables: ["id": id], timeout: 120, context: context
+            )
+            guard response.data != nil else { throw UnraidError.noData }
+            await invalidateCache()
+        } catch {
+            await invalidateCache()
+            throw error
+        }
     }
 
     // MARK: - VM Actions
 
-    /// Starts a VM
-    func startVm(id: String) async throws {
-        await invalidateCache()
+    func startVm(id: String) async throws { try await performVmAction("start", id: id) }
+    func stopVm(id: String) async throws { try await performVmAction("stop", id: id) }
+    func forceStopVm(id: String) async throws { try await performVmAction("forceStop", id: id) }
+    func restartVm(id: String) async throws { try await performVmAction("reboot", id: id) }
+    func pauseVm(id: String) async throws { try await performVmAction("pause", id: id) }
+    func resumeVm(id: String) async throws { try await performVmAction("resume", id: id) }
 
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                start(id: "\(safeId)")
-            }
-        }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
+    private struct VmActionResponse: Codable {
+        let vm: Result
+        struct Result: Codable { let result: Bool }
     }
 
-    /// Stops a VM gracefully
-    func stopVm(id: String) async throws {
+    private func performVmAction(_ action: String, id: String) async throws {
+        let context = try requestContext()
         await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                stop(id: "\(safeId)")
-            }
+        do {
+            let response: GraphQLResponse<VmActionResponse> = try await executeQuery(
+                "mutation($id: PrefixedID!) { vm { result: \(action)(id: $id) } }",
+                variables: ["id": id], timeout: 120, context: context
+            )
+            guard let result = response.data?.vm.result else { throw UnraidError.noData }
+            guard result else { throw UnraidError.graphQLError("VM command was not successful") }
+            await invalidateCache()
+        } catch {
+            await invalidateCache()
+            throw error
         }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
-    }
-
-    /// Force stops a VM (like pulling the power)
-    func forceStopVm(id: String) async throws {
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                forceStop(id: "\(safeId)")
-            }
-        }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
-    }
-
-    /// Restarts a VM
-    func restartVm(id: String) async throws {
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                reboot(id: "\(safeId)")
-            }
-        }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
-    }
-
-    /// Pauses a VM
-    func pauseVm(id: String) async throws {
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                pause(id: "\(safeId)")
-            }
-        }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
-    }
-
-    /// Resumes a paused VM
-    func resumeVm(id: String) async throws {
-        await invalidateCache()
-
-        let safeId = sanitizeId(id)
-        let mutation = """
-        mutation {
-            vm {
-                resume(id: "\(safeId)")
-            }
-        }
-        """
-
-        let _: GraphQLResponse<VmMutationResponse> = try await executeQuery(mutation)
     }
 
     // MARK: - Schema Introspection
 
     /// Introspects the GraphQL schema to discover available fields
     func introspectSchema(url: String, apiKey: String) async throws -> String {
-        guard !url.isEmpty else {
-            throw UnraidError.invalidURL
-        }
-
-        let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-
-        guard let testURL = URL(string: "\(cleanURL)/graphql") else {
-            throw UnraidError.invalidURL
-        }
+        let testURL = try Self.graphQLURL(from: url)
 
         // Introspection query to discover the schema
         let query = """
@@ -763,6 +403,8 @@ class UnraidService {
 
         var request = URLRequest(url: testURL)
         request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpShouldHandleCookies = false
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -771,13 +413,14 @@ class UnraidService {
         let body: [String: Any] = ["query": query]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnraidError.invalidResponse
         }
         guard (200...299).contains(httpResponse.statusCode) else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            if httpResponse.statusCode == 403 { throw UnraidError.forbidden }
+            if httpResponse.statusCode == 401 {
                 throw UnraidError.unauthorized
             }
             throw UnraidError.httpError(httpResponse.statusCode)
@@ -794,38 +437,15 @@ class UnraidService {
 
     /// Tests the connection to the Unraid server using the provided URL and API key
     func testConnection(url: String, apiKey: String) async throws -> UnraidSystemInfo {
-        guard !url.isEmpty else {
-            throw UnraidError.invalidURL
-        }
-
-        let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-
-        guard let testURL = URL(string: "\(cleanURL)/graphql") else {
-            throw UnraidError.invalidURL
-        }
+        let testURL = try Self.graphQLURL(from: url)
 
         // Unraid 7.2+ schema: version is in vars, uptime is ISO8601 boot timestamp
         // metrics provides real-time CPU and memory usage
         // cpu.brand contains the actual CPU name (e.g., "Ryzen 7 2700")
-        let query = """
-        query {
-            vars { version }
-            online
-            info {
-                os { hostname uptime }
-                cpu { brand cores }
-            }
-            metrics {
-                cpu { percentTotal }
-                memory { total used free available percentTotal }
-            }
-        }
-        """
+        let query = "query { \(Self.systemFields) }"
 
         struct TestConnectionResponse: Codable {
             let vars: VarsData
-            let online: Bool
             let info: TestInfoData
             let metrics: MetricsData?
         }
@@ -843,44 +463,29 @@ class UnraidService {
             throw UnraidError.connectionFailed
         }
 
-        return UnraidSystemInfo(
-            hostname: data.info.os.hostname,
-            version: data.vars.version,
-            uptime: parseUptimeFromBootTime(data.info.os.uptime),
-            cpu: UnraidCPU(
-                model: data.info.cpu.brand ?? data.info.cpu.model ?? "Unknown",
-                cores: data.info.cpu.cores.intValue,
-                usage: data.metrics?.cpu?.percentTotal ?? 0,
-                temperature: nil
-            ),
-            memory: UnraidMemory(
-                total: data.metrics?.memory?.total ?? 0,
-                used: data.metrics?.memory?.used ?? 0,
-                free: data.metrics?.memory?.free ?? 0,
-                available: data.metrics?.memory?.available,
-                percentTotalFromAPI: data.metrics?.memory?.percentTotal
-            )
-        )
+        return parseSystemInfo(info: data.info, version: data.vars.version, metrics: data.metrics)
     }
 
     // MARK: - Private Helpers
 
-    private func executeQuery<T: Codable>(_ query: String) async throws -> GraphQLResponse<T> {
-        guard let url = getGraphQLURL() else {
-            throw UnraidError.notConfigured
-        }
-
-        return try await executeQueryWithCredentials(query, url: url, apiKey: getAPIKey())
+    private func executeQuery<T: Codable>(_ query: String, variables: [String: String] = [:], timeout: TimeInterval = 15, context: RequestContext? = nil) async throws -> GraphQLResponse<T> {
+        let context = try context ?? requestContext()
+        try Task.checkCancellation()
+        return try await executeQueryWithCredentials(query, url: context.url, apiKey: context.apiKey, variables: variables, timeout: timeout)
     }
 
     private func executeQueryWithCredentials<T: Codable>(
         _ query: String,
         url: URL,
-        apiKey: String
+        apiKey: String,
+        variables: [String: String] = [:],
+        timeout: TimeInterval = 15
     ) async throws -> GraphQLResponse<T> {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        request.timeoutInterval = 15
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.httpShouldHandleCookies = false
+        request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
@@ -894,26 +499,27 @@ class UnraidService {
             request.setValue(origin, forHTTPHeaderField: "Origin")
         }
 
-        let body: [String: Any] = ["query": query]
+        let body: [String: Any] = ["query": query, "variables": variables]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw UnraidError.invalidResponse
         }
 
-        #if DEBUG
-        if !(200...299).contains(httpResponse.statusCode) {
-            if let responseBody = String(data: data, encoding: .utf8) {
-                print("Unraid API Error (\(httpResponse.statusCode)): \(responseBody)")
+        // GraphQL validation failures can use HTTP 400. Decode errors before
+        // the payload so partial data cannot hide the actual server error.
+        if httpResponse.statusCode == 200 || httpResponse.statusCode == 400 {
+            let envelope = try? JSONDecoder().decode(GraphQLResponse<EmptyResponse>.self, from: data)
+            if let errors = envelope?.errors, !errors.isEmpty {
+                throw UnraidError.graphQLError(errors.map(\.message).joined(separator: "\n"))
             }
-            print("Request URL: \(url)")
         }
-        #endif
 
         guard (200...299).contains(httpResponse.statusCode) else {
-            if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+            if httpResponse.statusCode == 403 { throw UnraidError.forbidden }
+            if httpResponse.statusCode == 401 {
                 throw UnraidError.unauthorized
             }
             throw UnraidError.httpError(httpResponse.statusCode)
@@ -933,64 +539,55 @@ class UnraidService {
             if let unraidError = error as? UnraidError {
                 throw unraidError
             }
-            #if DEBUG
-            if let jsonString = String(data: data, encoding: .utf8) {
-                print("Failed to decode response: \(jsonString)")
-            }
-            #endif
             throw UnraidError.decodingFailed
         }
     }
 
     // MARK: - Parsing Helpers
 
-    private func parseSystemInfo(from data: InfoData) -> UnraidSystemInfo {
-        let uptimeSeconds = parseUptime(data.os.uptime)
-
-        let memory: UnraidMemory
-        if let mem = data.memory {
-            memory = UnraidMemory(
-                total: parseBytes(mem.total),
-                used: parseBytes(mem.used),
-                free: parseBytes(mem.free),
-                available: nil,
-                percentTotalFromAPI: nil
-            )
-        } else {
-            memory = UnraidMemory(total: 0, used: 0, free: 0, available: nil, percentTotalFromAPI: nil)
-        }
-
-        return UnraidSystemInfo(
-            hostname: data.os.hostname,
-            version: data.os.version ?? "Unknown",
-            uptime: uptimeSeconds,
-            cpu: UnraidCPU(
-                model: data.cpu.model ?? "Unknown",
-                cores: data.cpu.cores.intValue,
-                usage: 0, // Not provided by basic query
-                temperature: nil
-            ),
-            memory: memory
+    private func parseSystemInfo(info: TestInfoData, version: String, metrics: MetricsData?) -> UnraidSystemInfo {
+        UnraidSystemInfo(
+            hostname: info.os.hostname,
+            version: version,
+            uptime: parseUptimeFromBootTime(info.os.uptime),
+            cpu: UnraidCPU(model: info.cpu.brand ?? info.cpu.model ?? "Unknown",
+                          cores: info.cpu.cores.intValue,
+                          usage: (metrics?.cpu?.percentTotal).map { min(100, max(0, $0)) }, temperature: nil),
+            memory: UnraidMemory(total: metrics?.memory?.total ?? 0,
+                                 used: metrics?.memory?.used ?? 0,
+                                 free: metrics?.memory?.free ?? 0,
+                                 available: metrics?.memory?.available,
+                                 percentTotalFromAPI: metrics?.memory?.percentTotal)
         )
+    }
+
+    static func saturatingKilobytes(_ value: Int64) -> Int64 {
+        let (result, overflow) = max(0, value).multipliedReportingOverflow(by: 1_000)
+        return overflow ? Int64.max : result
+    }
+
+    private static func saturatingSum(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (result, overflow) = lhs.addingReportingOverflow(rhs)
+        return overflow ? Int64.max : result
     }
 
     private func parseArray(from data: ArrayData) -> UnraidArray {
         // Helper to parse a single disk
         func parseDisk(_ disk: DiskData) -> UnraidDisk {
-            let diskSizeKB = max(0, Int64(disk.size.intValue))
-            let diskSizeBytes = diskSizeKB * 1000  // KB to bytes (SI units)
+            let diskSizeKB = max(0, Int64(disk.size?.intValue ?? 0))
+            let diskSizeBytes = Self.saturatingKilobytes(diskSizeKB)  // KB to bytes (SI units)
 
             // fsUsed is in KB
-            let usedBytes = max(0, Int64(disk.fsUsed?.intValue ?? 0)) * 1000
+            let usedBytes = Self.saturatingKilobytes(Int64(disk.fsUsed?.intValue ?? 0))
 
             return UnraidDisk(
-                id: disk.id ?? disk.name,
-                name: disk.name,
+                id: disk.id ?? disk.name ?? disk.device ?? "unknown",
+                name: disk.name ?? disk.device ?? "Unknown disk",
                 size: diskSizeBytes,
                 used: usedBytes,
-                status: DiskStatus(apiValue: disk.status),
+                status: DiskStatus(apiValue: disk.status ?? "UNKNOWN"),
                 temperature: disk.temp,
-                type: parseDiskType(disk.type ?? disk.name),
+                type: parseDiskType(disk.type ?? disk.name ?? ""),
                 device: disk.device,
                 serial: disk.serial
             )
@@ -1019,10 +616,10 @@ class UnraidService {
 
         // Calculate total capacity from data disks (exclude parity, cache, flash)
         let dataDisks = allDisks.filter { $0.type == .data }
-        let totalBytes = dataDisks.reduce(Int64(0)) { $0 + $1.size }
+        let totalBytes = dataDisks.reduce(Int64(0)) { Self.saturatingSum($0, $1.size) }
 
         // Sum up used from individual data disks for accurate capacity
-        let totalUsedBytes = dataDisks.reduce(Int64(0)) { $0 + $1.used }
+        let totalUsedBytes = dataDisks.reduce(Int64(0)) { Self.saturatingSum($0, $1.used) }
 
         // The API's authoritative storage capacity is expressed in kilobytes.
         // `capacity.disks` is a disk *count* and must never be treated as bytes.
@@ -1064,9 +661,9 @@ class UnraidService {
 
     private func parseVm(from data: VmDomainData) -> VmDomain {
         return VmDomain(
-            id: data.id ?? data.uuid,
-            name: data.name,
-            uuid: data.uuid,
+            id: data.id ?? data.uuid ?? "unknown",
+            name: data.name ?? "Unnamed VM",
+            uuid: data.uuid ?? data.id ?? "unknown",
             state: VmState(rawValue: data.state.uppercased()) ?? .unknown
         )
     }
@@ -1123,44 +720,6 @@ class UnraidService {
         return totalSeconds
     }
 
-    private func parseBytes(_ bytesString: String) -> Int64 {
-        // Handle numeric strings
-        if let bytes = Int64(bytesString) {
-            return bytes
-        }
-
-        // Handle strings like "1.5 TB", "500 GB", "1024 MB"
-        let cleanedString = bytesString.trimmingCharacters(in: .whitespaces).uppercased()
-
-        // Use cached regex for efficiency
-        guard let regex = Self.bytesRegex,
-              let match = regex.firstMatch(in: cleanedString, range: NSRange(cleanedString.startIndex..., in: cleanedString)) else {
-            return 0
-        }
-
-        guard let numberRange = Range(match.range(at: 1), in: cleanedString),
-              let unitRange = Range(match.range(at: 2), in: cleanedString) else {
-            return 0
-        }
-
-        let numberStr = String(cleanedString[numberRange]).replacingOccurrences(of: ",", with: "")
-        guard let number = Double(numberStr) else { return 0 }
-
-        let unit = String(cleanedString[unitRange])
-
-        let multiplier: Double
-        switch unit {
-        case "KB", "K": multiplier = 1024
-        case "MB", "M": multiplier = 1024 * 1024
-        case "GB", "G": multiplier = 1024 * 1024 * 1024
-        case "TB", "T": multiplier = 1024 * 1024 * 1024 * 1024
-        case "PB", "P": multiplier = 1024 * 1024 * 1024 * 1024 * 1024
-        default: multiplier = 1
-        }
-
-        return ServerMetric.byteCount(number * multiplier)
-    }
-
     private func bytesFromKilobyteString(_ value: String?) -> Int64? {
         guard let value,
               let kilobytes = Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -1173,7 +732,7 @@ class UnraidService {
         let lower = typeOrName.lowercased()
         if lower.contains("parity") { return .parity }
         if lower.contains("cache") { return .cache }
-        if lower.contains("flash") { return .flash }
+        if lower.contains("flash") || lower.contains("boot") { return .flash }
         return .data
     }
 }
@@ -1189,6 +748,7 @@ enum UnraidError: LocalizedError {
     case invalidURL
     case connectionFailed
     case unauthorized
+    case forbidden
     case httpError(Int)
     case graphQLError(String)
     case decodingFailed
@@ -1204,7 +764,9 @@ enum UnraidError: LocalizedError {
         case .connectionFailed:
             return "Could not connect to server"
         case .unauthorized:
-            return "Invalid API key"
+            return "Invalid or expired API key"
+        case .forbidden:
+            return "The API key does not have permission for this operation"
         case .httpError(let code):
             return "Server returned error \(code)"
         case .graphQLError(let message):

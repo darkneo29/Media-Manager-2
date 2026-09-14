@@ -15,6 +15,7 @@ struct UnraidSettingsView: View {
     @State private var connectedVersion: String?
     @State private var resetTask: Task<Void, Never>?
     @State private var testAttemptId = UUID()
+    @State private var saveError: String?
 
     var body: some View {
         ZStack {
@@ -26,6 +27,10 @@ struct UnraidSettingsView: View {
             iOSContent
             #endif
         }
+        .alert("Could not save Unraid settings", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+        )) { Button("OK", role: .cancel) { saveError = nil } }
+        message: { Text(saveError ?? "") }
         .navigationTitle("Unraid Settings")
         #if !os(tvOS)
         .navBarTitleDisplayMode(.inline)
@@ -33,8 +38,7 @@ struct UnraidSettingsView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button {
-                    saveSettings()
-                    dismiss()
+                    if saveSettings() { dismiss() }
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
@@ -159,7 +163,7 @@ struct UnraidSettingsView: View {
                         TVRequirementRow(
                             icon: "key.fill",
                             iconColor: ColorPalette.warning,
-                            text: "API key with 'viewer' role minimum"
+                            text: "Viewer access for monitoring; Docker/VM update permission for controls"
                         )
                         TVRequirementRow(
                             icon: "network",
@@ -387,7 +391,7 @@ struct UnraidSettingsView: View {
                         RequirementRow(
                             icon: "key.fill",
                             iconColor: ColorPalette.warning,
-                            text: "API key with 'viewer' role minimum"
+                            text: "Viewer access for monitoring; Docker/VM update permission for controls"
                         )
                         RequirementRow(
                             icon: "network",
@@ -415,9 +419,16 @@ struct UnraidSettingsView: View {
         temperatureUnit = defaults.string(forKey: "unraidTemperatureUnit") ?? "celsius"
     }
 
-    private func saveSettings() {
-        try? configuration.saveUnraid(url: editingURL, apiKey: editingAPIKey)
-        saveDisplayPreferences()
+    @discardableResult
+    private func saveSettings() -> Bool {
+        do {
+            try configuration.saveUnraid(url: editingURL, apiKey: editingAPIKey)
+            saveDisplayPreferences()
+            return true
+        } catch {
+            saveError = error.localizedDescription
+            return false
+        }
     }
 
     private func invalidateConnectionTest() {

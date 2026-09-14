@@ -41,11 +41,15 @@ struct GetServerStatusIntent: AppIntent {
             let runningContainers = containers.filter { $0.state == .running }.count
             let totalContainers = containers.count
 
+            let cpuText = system.cpu.usage.map { "\(Int($0))%" } ?? "unavailable"
+            let memoryText = system.memory.total > 0
+                ? "\(String(format: "%.1f", memoryUsedGB))/\(String(format: "%.1f", memoryTotalGB)) GB (\(Int(memoryPercent))%)"
+                : "unavailable"
             let summary = """
             \(system.hostname) is online. \
-            Uptime: \(uptimeString). \
-            CPU: \(Int(system.cpu.usage))%. \
-            Memory: \(String(format: "%.1f", memoryUsedGB))/\(String(format: "%.1f", memoryTotalGB)) GB (\(Int(memoryPercent))%). \
+            Array: \(array.state.displayName). Uptime: \(uptimeString). \
+            CPU: \(cpuText). \
+            Memory: \(memoryText). \
             Storage: \(String(format: "%.1f", storageUsedTB))/\(String(format: "%.1f", storageTotalTB)) TB (\(Int(storagePercent))%). \
             Containers: \(runningContainers)/\(totalContainers) running.
             """

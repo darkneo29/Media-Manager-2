@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ServerHealthWidget: View {
+    @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var configuration = ConfigurationManager.shared
 
     @State private var systemInfo: UnraidSystemInfo?
@@ -59,16 +60,14 @@ struct ServerHealthWidget: View {
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .task(id: loadRequestID) {
+            .task(id: RefreshIdentity(url: configuration.unraidURL, key: configuration.unraidAPIKey,
+                                      request: loadRequestID, active: isVisible && scenePhase == .active)) {
+                guard isVisible && scenePhase == .active else { return }
                 await loadData()
-            }
-            .task(id: isVisible) {
-                // Periodic refresh when visible
-                guard isVisible && isConfigured else { return }
-
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 seconds
-                    guard !Task.isCancelled && isVisible else { continue }
+                    do { try await Task.sleep(for: .seconds(30)) }
+                    catch { return }
+                    guard !Task.isCancelled else { return }
                     await refreshData()
                 }
             }
@@ -85,6 +84,13 @@ struct ServerHealthWidget: View {
                 isVisible = false
             }
         }
+    }
+
+    private struct RefreshIdentity: Hashable {
+        let url: String
+        let key: String
+        let request: UUID
+        let active: Bool
     }
 
     private var widgetContent: some View {
@@ -119,7 +125,7 @@ struct ServerHealthWidget: View {
                             Circle()
                                 .fill(array?.state.isOnline == true ? ColorPalette.success : ColorPalette.warning)
                                 .frame(width: 6, height: 6)
-                            Text(array?.state.isOnline == true ? "Online" : "Offline")
+                            Text("Array: \(array?.state.displayName ?? "Unknown")")
                                 .font(AppTypography.caption2())
                             .foregroundColor(array?.state.isOnline == true ? ColorPalette.success : ColorPalette.warning)
                         }
@@ -189,6 +195,7 @@ struct ServerHealthWidget: View {
 
     private func loadData() async {
         isLoading = true
+        retryCount = 0
 
         while !Task.isCancelled {
             do {
@@ -207,7 +214,7 @@ struct ServerHealthWidget: View {
             } catch {
                 guard !Task.isCancelled else { return }
 
-                if retryCount >= maxRetries {
+                if retryCount >= maxRetries || !UnraidService.shouldRetryRead(error) {
                     await MainActor.run {
                         self.isLoading = false
                         self.hasError = true
@@ -230,6 +237,7 @@ struct ServerHealthWidget: View {
         // Silent refresh - don't show loading state
         do {
             let data = try await UnraidService.shared.fetchAllData()
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 self.systemInfo = data.system
                 self.array = data.array
@@ -239,10 +247,8 @@ struct ServerHealthWidget: View {
                 self.retryCount = 0
             }
         } catch {
-            // Silent fail for background refreshes, but reset error state if it was set
-            #if DEBUG
-            print("Widget refresh failed: \(error)")
-            #endif
+            guard !Task.isCancelled else { return }
+            hasError = true
         }
     }
 }

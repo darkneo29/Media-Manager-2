@@ -19,6 +19,7 @@ struct ServerView: View {
 
     @State private var isLoading = true
     @State private var error: String?
+    @State private var commandError: String?
     @State private var lastRefresh = Date()
 
     // Cached computed properties to avoid recalculating on every render
@@ -27,7 +28,7 @@ struct ServerView: View {
     @State private var cachedRunningCount: Int = 0
 
     // Task tracking for proper cancellation
-    @State private var refreshTask: Task<Void, Never>?
+    @State private var loadGeneration = UUID()
     @State private var containerOperationTasks: [String: Task<Void, Never>] = [:]
     @State private var vmOperationTasks: [String: Task<Void, Never>] = [:]
 
@@ -62,13 +63,21 @@ struct ServerView: View {
                 mainContent
             }
         }
+        .alert("Unraid command failed", isPresented: Binding(
+            get: { commandError != nil },
+            set: { if !$0 { commandError = nil } }
+        )) {
+            Button("OK", role: .cancel) { commandError = nil }
+        } message: {
+            Text(commandError ?? "")
+        }
         .navigationTitle("Server")
         .navBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 if isConfigured {
                     Button(action: {
-                        Task { await refreshData() }
+                        Task { await refreshData(forceRefresh: true) }
                     }) {
                         if isLoading {
                             ProgressView()
@@ -83,10 +92,13 @@ struct ServerView: View {
                 }
             }
         }
-        .task {
-            if isConfigured {
-                await loadData()
-            }
+        .task(id: [configuration.unraidURL, configuration.unraidAPIKey]) {
+            systemInfo = nil
+            array = nil
+            containers = []
+            vms = []
+            updateCachedContainers()
+            if isConfigured { await loadData() }
         }
         .task(id: isViewVisible && scenePhase == .active) {
             // Only run refresh timer when view is visible and app is active
@@ -104,17 +116,13 @@ struct ServerView: View {
         }
         .onDisappear {
             isViewVisible = false
-            // Cancel any pending container operations
-            containerOperationTasks.values.forEach { $0.cancel() }
-            containerOperationTasks.removeAll()
-            // Cancel any pending VM operations
-            vmOperationTasks.values.forEach { $0.cancel() }
-            vmOperationTasks.removeAll()
+            // User-issued commands must finish even when navigating away,
+            // especially a restart's stop/start compatibility sequence.
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Kick an immediate refresh when returning to foreground while visible.
             if newPhase == .active && isViewVisible && isConfigured {
-                Task { await refreshData() }
+                Task { await refreshData(forceRefresh: true) }
             }
         }
     }
@@ -199,6 +207,11 @@ struct ServerView: View {
     private var mainContent: some View {
         ScrollView {
             VStack(spacing: isTVOS ? TVSizing.sectionSpacing : AppSpacing.lg) {
+                if let error {
+                    Label("Refresh failed. Showing last received data. \(error)", systemImage: "exclamationmark.triangle")
+                        .font(AppTypography.caption1())
+                        .foregroundColor(ColorPalette.warning)
+                }
                 // System Status Card
                 if let systemInfo = systemInfo, let array = array {
                     SystemStatusCard(
@@ -241,7 +254,7 @@ struct ServerView: View {
             .padding(.bottom, isTVOS ? TVSizing.contentPadding : AppSpacing.xl)
         }
         .refreshable {
-            await refreshData()
+            await refreshData(forceRefresh: true)
         }
     }
 
@@ -293,6 +306,7 @@ struct ServerView: View {
                         title: "MEDIA STACK",
                         containers: cachedMediaStackContainers,
                         restartingContainerIds: restartingContainerIds,
+                        busyContainerIds: Set(containerOperationTasks.keys),
                         onStart: startContainer,
                         onStop: stopContainer,
                         onRestart: restartContainer
@@ -304,6 +318,7 @@ struct ServerView: View {
                         title: "OTHER CONTAINERS",
                         containers: cachedOtherContainers,
                         restartingContainerIds: restartingContainerIds,
+                        busyContainerIds: Set(containerOperationTasks.keys),
                         onStart: startContainer,
                         onStop: stopContainer,
                         onRestart: restartContainer
@@ -316,6 +331,7 @@ struct ServerView: View {
                         DockerContainerCard(
                             container: container,
                             isRestarting: restartingContainerIds.contains(container.id),
+                            isBusy: containerOperationTasks[container.id] != nil,
                             onStart: { startContainer(container) },
                             onStop: { stopContainer(container) },
                             onRestart: { restartContainer(container) }
@@ -333,6 +349,7 @@ struct ServerView: View {
             VMGroupCard(
                 vms: vms,
                 restartingVmIds: restartingVmIds,
+                busyVmIds: Set(vmOperationTasks.keys),
                 onStart: startVm,
                 onStop: stopVm,
                 onRestart: restartVm,
@@ -353,213 +370,95 @@ struct ServerView: View {
     // MARK: - Container Actions
 
     private func startContainer(_ container: DockerContainer) {
-        // Cancel any existing operation for this container
-        containerOperationTasks[container.id]?.cancel()
-
-        let task = Task {
-            do {
-                try await UnraidService.shared.startContainer(id: container.id)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to start container: \(error)")
-                }
-                #endif
-            }
-            containerOperationTasks.removeValue(forKey: container.id)
+        runContainerCommand(container) {
+            if container.state == .paused { try await UnraidService.shared.resumeContainer(id: container.id) }
+            else { try await UnraidService.shared.startContainer(id: container.id) }
         }
-        containerOperationTasks[container.id] = task
     }
 
     private func stopContainer(_ container: DockerContainer) {
-        // Cancel any existing operation for this container
-        containerOperationTasks[container.id]?.cancel()
-
-        let task = Task {
-            do {
-                try await UnraidService.shared.stopContainer(id: container.id)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to stop container: \(error)")
-                }
-                #endif
-            }
-            containerOperationTasks.removeValue(forKey: container.id)
-        }
-        containerOperationTasks[container.id] = task
+        runContainerCommand(container) { try await UnraidService.shared.stopContainer(id: container.id) }
     }
 
     private func restartContainer(_ container: DockerContainer) {
-        // Cancel any existing operation for this container
-        containerOperationTasks[container.id]?.cancel()
+        runContainerCommand(container, restarting: true) { try await UnraidService.shared.restartContainer(id: container.id) }
+    }
 
-        let task = Task {
-            // Show restarting state immediately
-            _ = await MainActor.run {
-                restartingContainerIds.insert(container.id)
-            }
-
-            do {
-                try await UnraidService.shared.restartContainer(id: container.id)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to restart container: \(error)")
-                }
-                #endif
-            }
-
-            // Clear restarting state after operation completes
-            _ = await MainActor.run {
+    private func runContainerCommand(_ container: DockerContainer, restarting: Bool = false, action: @escaping () async throws -> Void) {
+        guard containerOperationTasks[container.id] == nil else { return }
+        if restarting { restartingContainerIds.insert(container.id) }
+        containerOperationTasks[container.id] = Task {
+            defer {
                 restartingContainerIds.remove(container.id)
+                containerOperationTasks.removeValue(forKey: container.id)
             }
-            containerOperationTasks.removeValue(forKey: container.id)
+            do { try await action() }
+            catch { if !Task.isCancelled { commandError = "\(container.displayName): \(error.localizedDescription)" } }
+            if isViewVisible && !Task.isCancelled { await refreshData() }
         }
-        containerOperationTasks[container.id] = task
     }
 
     // MARK: - VM Actions
 
     private func startVm(_ vm: VmDomain) {
-        vmOperationTasks[vm.id]?.cancel()
-
-        let task = Task {
-            do {
-                try await UnraidService.shared.startVm(id: vm.uuid)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to start VM: \(error)")
-                }
-                #endif
-            }
-            vmOperationTasks.removeValue(forKey: vm.id)
+        runVmCommand(vm) {
+            if vm.state == .paused { try await UnraidService.shared.resumeVm(id: vm.id) }
+            else { try await UnraidService.shared.startVm(id: vm.id) }
         }
-        vmOperationTasks[vm.id] = task
     }
-
     private func stopVm(_ vm: VmDomain) {
-        vmOperationTasks[vm.id]?.cancel()
-
-        let task = Task {
-            do {
-                try await UnraidService.shared.stopVm(id: vm.uuid)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to stop VM: \(error)")
-                }
-                #endif
-            }
-            vmOperationTasks.removeValue(forKey: vm.id)
-        }
-        vmOperationTasks[vm.id] = task
+        runVmCommand(vm) { try await UnraidService.shared.stopVm(id: vm.id) }
     }
-
     private func restartVm(_ vm: VmDomain) {
-        vmOperationTasks[vm.id]?.cancel()
-
-        let task = Task {
-            _ = await MainActor.run {
-                restartingVmIds.insert(vm.id)
-            }
-
-            do {
-                try await UnraidService.shared.restartVm(id: vm.uuid)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to restart VM: \(error)")
-                }
-                #endif
-            }
-
-            _ = await MainActor.run {
-                restartingVmIds.remove(vm.id)
-            }
-            vmOperationTasks.removeValue(forKey: vm.id)
-        }
-        vmOperationTasks[vm.id] = task
+        runVmCommand(vm, restarting: true) { try await UnraidService.shared.restartVm(id: vm.id) }
+    }
+    private func forceStopVm(_ vm: VmDomain) {
+        runVmCommand(vm) { try await UnraidService.shared.forceStopVm(id: vm.id) }
     }
 
-    private func forceStopVm(_ vm: VmDomain) {
-        vmOperationTasks[vm.id]?.cancel()
-
-        let task = Task {
-            do {
-                try await UnraidService.shared.forceStopVm(id: vm.uuid)
-                guard !Task.isCancelled else { return }
-                await refreshData()
-            } catch {
-                #if DEBUG
-                if !Task.isCancelled {
-                    print("Failed to force stop VM: \(error)")
-                }
-                #endif
+    private func runVmCommand(_ vm: VmDomain, restarting: Bool = false, action: @escaping () async throws -> Void) {
+        guard vmOperationTasks[vm.id] == nil else { return }
+        if restarting { restartingVmIds.insert(vm.id) }
+        vmOperationTasks[vm.id] = Task {
+            defer {
+                restartingVmIds.remove(vm.id)
+                vmOperationTasks.removeValue(forKey: vm.id)
             }
-            vmOperationTasks.removeValue(forKey: vm.id)
+            do { try await action() }
+            catch { if !Task.isCancelled { commandError = "\(vm.displayName): \(error.localizedDescription)" } }
+            if isViewVisible && !Task.isCancelled { await refreshData() }
         }
-        vmOperationTasks[vm.id] = task
     }
 
     // MARK: - Data Loading
 
     private func loadData() async {
+        await refreshData()
+    }
+
+    private func refreshData(forceRefresh: Bool = false) async {
+        let generation = UUID()
+        loadGeneration = generation
         isLoading = true
-        error = nil
-
+        defer { if loadGeneration == generation { isLoading = false } }
         do {
-            let data = try await UnraidService.shared.fetchAllData()
-            await MainActor.run {
-                self.systemInfo = data.system
-                self.array = data.array
-                self.containers = data.containers
-                self.vms = data.vms
-                self.updateCachedContainers()
-                self.lastRefresh = Date()
-                self.isLoading = false
-            }
+            let data = try await UnraidService.shared.fetchAllData(forceRefresh: forceRefresh)
+            guard !Task.isCancelled, loadGeneration == generation else { return }
+            systemInfo = data.system
+            array = data.array
+            containers = data.containers
+            vms = data.vms
+            updateCachedContainers()
+            lastRefresh = Date()
+            error = nil
+        } catch is CancellationError {
+            // A new server or newer request superseded this response.
         } catch {
-            await MainActor.run {
-                self.error = error.localizedDescription
-                self.isLoading = false
-            }
+            guard !Task.isCancelled, loadGeneration == generation else { return }
+            self.error = error.localizedDescription
         }
     }
 
-    private func refreshData() async {
-        // Don't show loading indicator for refreshes
-        do {
-            let data = try await UnraidService.shared.fetchAllData()
-            await MainActor.run {
-                self.systemInfo = data.system
-                self.array = data.array
-                self.containers = data.containers
-                self.vms = data.vms
-                self.updateCachedContainers()
-                self.lastRefresh = Date()
-                self.error = nil
-            }
-        } catch {
-            // Silent fail for background refreshes
-            #if DEBUG
-            print("Refresh failed: \(error)")
-            #endif
-        }
-    }
 }
 
 #Preview {

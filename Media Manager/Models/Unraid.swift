@@ -38,7 +38,7 @@ struct UnraidSystemInfo: Codable, Hashable {
 struct UnraidCPU: Codable, Hashable {
     let model: String
     let cores: Int
-    let usage: Double // percentage 0-100
+    let usage: Double? // percentage 0-100; nil when metrics are unavailable
     let temperature: Double? // Celsius
 }
 
@@ -56,15 +56,15 @@ struct UnraidMemory: Codable, Hashable {
     nonisolated var usagePercentage: Double {
         // Use API-provided percentage if available (most accurate)
         if let apiPercent = percentTotalFromAPI {
-            return apiPercent
+            return min(100, max(0, apiPercent))
         }
         // Calculate from available memory if present
         if let available = available, total > 0 {
-            return Double(total - available) / Double(total) * 100
+            return Double(total - min(total, max(0, available))) / Double(total) * 100
         }
         // Fallback to used/total (can be misleading due to cache)
         guard total > 0 else { return 0 }
-        return Double(used) / Double(total) * 100
+        return min(100, max(0, Double(used) / Double(total) * 100))
     }
 
     var formattedTotal: String {
@@ -131,7 +131,7 @@ struct ArrayCapacity: Codable, Hashable {
 
     nonisolated var usagePercentage: Double {
         guard total > 0 else { return 0 }
-        return Double(used) / Double(total) * 100
+        return min(100, max(0, Double(used) / Double(total) * 100))
     }
 
     var formattedTotal: String {
@@ -588,11 +588,11 @@ struct DiskCapacity: Codable {
 
 struct DiskData: Codable {
     let id: String?
-    let name: String
-    let size: IntOrString
+    let name: String?
+    let size: IntOrString?
     let fsUsed: IntOrString?  // Unraid 7.2+: filesystem used space in KB
     let fsFree: IntOrString?  // Unraid 7.2+: filesystem free space in KB
-    let status: String
+    let status: String?
     let temp: Int?
     let type: String?
     let device: String?
@@ -625,8 +625,8 @@ struct VmsData: Codable {
 
 struct VmDomainData: Codable {
     let id: String?
-    let name: String
-    let uuid: String
+    let name: String?
+    let uuid: String?
     let state: String
 }
 
@@ -661,6 +661,24 @@ struct MemoryUtilization: Codable {
     let free: Int64
     let available: Int64?
     let percentTotal: Double?
+    enum CodingKeys: String, CodingKey { case total, used, free, available, percentTotal }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        func bytes(_ key: CodingKeys) throws -> Int64 {
+            if let number = try? values.decode(Int64.self, forKey: key) { return max(0, number) }
+            let text = try values.decode(String.self, forKey: key)
+            guard let number = Int64(text) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: values, debugDescription: "Invalid BigInt")
+            }
+            return max(0, number)
+        }
+        total = try bytes(.total)
+        used = try bytes(.used)
+        free = try bytes(.free)
+        available = try values.decodeIfPresent(CPUInfo.IntOrString.self, forKey: .available).map { Int64(max(0, $0.intValue)) }
+        percentTotal = try values.decodeIfPresent(Double.self, forKey: .percentTotal)
+    }
 }
 
 // MARK: - Uptime Formatting Helper
