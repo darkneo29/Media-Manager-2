@@ -24,6 +24,10 @@ private final class UnraidFixtureProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) private var stopped = false
     nonisolated override func stopLoading() { stopLock.withLock { stopped = true } }
     nonisolated override func startLoading() {
+        if ProcessInfo.processInfo.arguments.contains("--unraid-offline") {
+            client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+            return
+        }
         var data = request.httpBody ?? Data()
         if data.isEmpty, let stream = request.httpBodyStream {
             stream.open(); defer { stream.close() }

@@ -313,6 +313,27 @@ final class Media_ManagerUITests: XCTestCase {
 #if os(iOS)
 extension Media_ManagerUITests {
     @MainActor
+    func testUnreachableUnraidIsHiddenFromDashboard() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-dashboard", "--unraid-offline"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Trending content is unavailable"].waitForExistence(timeout: 15))
+        Thread.sleep(forTimeInterval: 2)
+        XCTAssertFalse(app.staticTexts["Server Health"].exists)
+        XCTAssertFalse(app.staticTexts["Server unavailable"].exists)
+        XCTAssertFalse(app.staticTexts["Tap to retry"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Dashboard away from LAN"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.terminate()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-dashboard"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Server Health"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["TEST TOWER"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testUnraidPartialSectionsAndContainerDiagnostics() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--unraid-integration-fixtures", "--unraid-partial"]

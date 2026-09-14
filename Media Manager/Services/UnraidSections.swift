@@ -76,7 +76,8 @@ extension UnraidService {
             guard try requestContext() == context else { throw CancellationError() }
             let previous = await readCache.previous(key: name, connection: context)
             return UnraidSection(value: previous.flatMap { try? JSONDecoder().decode(T.self, from: $0.data) },
-                                 updatedAt: previous?.updatedAt, error: error.localizedDescription)
+                                 updatedAt: previous?.updatedAt, error: error.localizedDescription,
+                                 connectionUnavailable: Self.isConnectivityFailure(error))
         }
     }
 
@@ -183,9 +184,9 @@ extension UnraidService {
 
 extension UnraidSection {
     func map<NewValue>(_ transform: (Value) -> NewValue) -> UnraidSection<NewValue> {
-        UnraidSection<NewValue>(value: value.map(transform), updatedAt: updatedAt, error: error)
+        UnraidSection<NewValue>(value: value.map(transform), updatedAt: updatedAt, error: error, connectionUnavailable: connectionUnavailable)
     }
     func compactMap<NewValue>(_ transform: (Value) -> NewValue?) -> UnraidSection<NewValue> {
-        UnraidSection<NewValue>(value: value.flatMap(transform), updatedAt: updatedAt, error: error)
+        UnraidSection<NewValue>(value: value.flatMap(transform), updatedAt: updatedAt, error: error, connectionUnavailable: connectionUnavailable)
     }
 }

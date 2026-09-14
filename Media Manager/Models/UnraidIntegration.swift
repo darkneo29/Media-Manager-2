@@ -5,6 +5,7 @@ struct UnraidSection<Value> {
     var value: Value?
     var updatedAt: Date?
     var error: String?
+    var connectionUnavailable = false
     var isStale: Bool { value != nil && error != nil }
     static func unavailable(_ message: String) -> Self { Self(error: message) }
 }
@@ -19,6 +20,10 @@ struct UnraidOverview {
     var metrics: UnraidSection<MetricsData>
     var storage: UnraidSection<UnraidArray>
     var containers: UnraidSection<[UnraidContainerSummary]>
+
+    var connectionUnavailable: Bool {
+        system.connectionUnavailable || metrics.connectionUnavailable || storage.connectionUnavailable || containers.connectionUnavailable
+    }
 
     var errors: [String] {
         [("System", system.error), ("Metrics", metrics.error), ("Storage", storage.error), ("Containers", containers.error)]

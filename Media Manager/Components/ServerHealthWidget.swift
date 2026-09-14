@@ -10,6 +10,7 @@ struct ServerHealthWidget: View {
     @State private var totalContainers: Int = 0
     @State private var isLoading = true
     @State private var hasError = false
+    @State private var hideForConnection = true
     @State private var sectionErrors: [String] = []
     @State private var containersKnown = false
     @State private var isVisible = false
@@ -25,38 +26,40 @@ struct ServerHealthWidget: View {
     }
 
     var body: some View {
-        // Only show if configured (show even with error for recovery)
+        // Keep the lifecycle task mounted while the card is hidden so it can recover.
         if isConfigured {
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                // Optional section header
-                if showHeader {
-                    HStack {
-                        Text("Server Health")
-                            .font(AppTypography.title3())
-                            .foregroundColor(ColorPalette.textPrimaryDark)
+                if !hideForConnection {
+                    // Optional section header
+                    if showHeader {
+                        HStack {
+                            Text("Server Health")
+                                .font(AppTypography.title3())
+                                .foregroundColor(ColorPalette.textPrimaryDark)
 
-                        Spacer()
+                            Spacer()
 
-                        Button(action: { onTap?() }) {
-                            Text("View All")
-                                .font(AppTypography.caption1())
-                                .foregroundColor(ColorPalette.secondary)
+                            Button(action: { onTap?() }) {
+                                Text("View All")
+                                    .font(AppTypography.caption1())
+                                    .foregroundColor(ColorPalette.secondary)
+                            }
                         }
                     }
-                }
 
-                // Widget card (show loading/error/content)
-                Button {
-                    if hasError {
-                        hasError = false
-                        loadRequestID = UUID()
-                    } else {
-                        onTap?()
+                    // Widget card (show loading/error/content)
+                    Button {
+                        if hasError {
+                            hasError = false
+                            loadRequestID = UUID()
+                        } else {
+                            onTap?()
+                        }
+                    } label: {
+                        widgetContent
                     }
-                } label: {
-                    widgetContent
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .buttonStyle(PlainButtonStyle())
             }
             .task(id: RefreshIdentity(url: configuration.unraidURL, key: configuration.unraidAPIKey,
                                       request: loadRequestID, active: isVisible && scenePhase == .active)) {
@@ -199,14 +202,15 @@ struct ServerHealthWidget: View {
 
     private func loadData() async {
         isLoading = true
-        await refreshData()
+        await refreshData(forceRefresh: hideForConnection)
         if !Task.isCancelled { isLoading = false }
     }
 
-    private func refreshData() async {
+    private func refreshData(forceRefresh: Bool = false) async {
         do {
-            let data = try await UnraidService.shared.fetchOverview()
+            let data = try await UnraidService.shared.fetchOverview(forceRefresh: forceRefresh)
             guard !Task.isCancelled else { return }
+            hideForConnection = data.connectionUnavailable
             systemInfo = data.system.value
             array = data.storage.value
             runningContainers = data.containers.value?.filter { $0.state.isRunning }.count ?? 0
@@ -216,6 +220,7 @@ struct ServerHealthWidget: View {
             hasError = data.system.value == nil && data.storage.value == nil && data.containers.value == nil
         } catch {
             guard !Task.isCancelled else { return }
+            hideForConnection = UnraidService.isConnectivityFailure(error)
             hasError = true
             sectionErrors = [error.localizedDescription]
         }

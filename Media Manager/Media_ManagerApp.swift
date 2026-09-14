@@ -24,7 +24,10 @@ struct Media_ManagerApp: App {
         WindowGroup {
             Group {
                 #if DEBUG
-                if UnraidIntegrationFixtures.enabled { ServerView() }
+                if UnraidIntegrationFixtures.enabled {
+                    if ProcessInfo.processInfo.arguments.contains("--unraid-dashboard") { DashboardView() }
+                    else { ServerView() }
+                }
                 else { ContentView() }
                 #else
                 ContentView()

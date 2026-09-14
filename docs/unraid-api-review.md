@@ -97,3 +97,7 @@ Additional primary implementation references:
 Added regressions cover response-time cache deadlines, overlapping cooldowns, rate-limited VM verification and follow-up reads, non-reboot state transitions, null metrics with GraphQL errors, and partial-section visibility during a delayed hardware refresh.
 
 Follow-up validation: all 23 targeted checks passed (20 service tests and three UI tests) on iPhone 17 / iOS 26.5. Result bundle: `Test-Media Manager-2026.09.14_06-43-28--0400.xcresult`. The final iOS Debug test build, tvOS Debug build, and diff whitespace check passed. An earlier run failed to launch because the simulator was busy; after a full simulator boot the complete suite passed. Live-server validation remains outstanding.
+
+### Dashboard behavior away from LAN
+
+Server Health now hides its entire header and card for connectivity failures, including offline, DNS, connection loss/refusal, and timeout errors. The decision uses typed transport errors and also hides previously cached values while unreachable. Its lifecycle-bound polling continues while hidden; a foreground return bypasses ordinary read backoff to check again. Configuration/permission failures remain distinguishable from being away from the network. Regression coverage checks offline and recovered snapshots and dashboard visibility for unreachable versus reachable servers.

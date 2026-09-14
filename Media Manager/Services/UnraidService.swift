@@ -48,6 +48,13 @@ final class UnraidService {
 
     // MARK: - GraphQL Endpoint
 
+    static func isConnectivityFailure(_ error: Error) -> Bool {
+        guard let error = error as? URLError else { return false }
+        return [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost,
+                .networkConnectionLost, .dnsLookupFailed, .timedOut,
+                .dataNotAllowed, .internationalRoamingOff, .callIsActive].contains(error.code)
+    }
+
     static func shouldRetryRead(_ error: Error) -> Bool {
         if case UnraidError.rateLimited = error { return true }
         if case UnraidError.httpError(let status) = error { return status == 429 || (500...599).contains(status) }

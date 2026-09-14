@@ -7,6 +7,7 @@ private struct PriorityReply {
     var body: String
     var headers: [String: String] = [:]
     var delay: TimeInterval = 0.005
+    var networkError: URLError.Code? = nil
 }
 
 private final class PriorityHTTPState: @unchecked Sendable {
@@ -55,6 +56,10 @@ private final class PriorityURLProtocol: URLProtocol, @unchecked Sendable {
         let reply = Self.state.route(request)
         DispatchQueue.global().asyncAfter(deadline: .now() + reply.delay) { [self] in
             guard !stopLock.withLock({ stopped }) else { return }
+            if let code = reply.networkError {
+                client?.urlProtocol(self, didFailWithError: URLError(code))
+                return
+            }
             let response = HTTPURLResponse(url: request.url!, statusCode: reply.status, httpVersion: nil, headerFields: reply.headers)!
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
@@ -428,5 +433,26 @@ extension UnraidPriorityTests {
             #expect(error.localizedDescription.contains("Docker metrics denied"))
         }
         #expect(socket.isClosed())
+    }
+}
+
+extension UnraidPriorityTests {
+    @Test @MainActor
+    func dashboardHidesUnreachableServerAndRecovers() async throws {
+        let (service, session) = service(); defer { session.invalidateAndCancel() }
+        let first = try await service.fetchOverview()
+        #expect(!first.connectionUnavailable)
+        PriorityURLProtocol.state.set("Metrics", [.init(body: "", networkError: .notConnectedToInternet)])
+        let offline = try await service.fetchOverview(forceRefresh: true)
+        #expect(offline.system.value != nil) // Cached hardware must not keep an offline card visible.
+        #expect(offline.metrics.isStale)
+        #expect(offline.connectionUnavailable)
+        PriorityURLProtocol.state.set("Metrics", Self.fixtures["Metrics"]!)
+        let recovered = try await service.fetchOverview(forceRefresh: true)
+        #expect(!recovered.connectionUnavailable)
+        PriorityURLProtocol.state.set("Metrics", [.init(status: 403, body: "{}")])
+        let denied = try await service.fetchOverview(forceRefresh: true)
+        #expect(!denied.connectionUnavailable)
+        #expect(denied.metrics.error != nil)
     }
 }
