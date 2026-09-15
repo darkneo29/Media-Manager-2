@@ -124,6 +124,8 @@ enum ArrayState: String, Codable, CaseIterable {
     }
 }
 
+enum StorageWarningLevel { case low, critical }
+
 struct ArrayCapacity: Codable, Hashable {
     let total: Int64
     let used: Int64
@@ -132,6 +134,19 @@ struct ArrayCapacity: Codable, Hashable {
     nonisolated var usagePercentage: Double {
         guard total > 0 else { return 0 }
         return min(100, max(0, Double(used) / Double(total) * 100))
+    }
+
+    /// Reject unavailable or inconsistent readings instead of showing a healthy empty disk.
+    nonisolated var isUsable: Bool {
+        total > 0 && used >= 0 && free >= 0 && used <= total && free <= total && used <= total - free
+    }
+
+    nonisolated func warningLevel(threshold: Int, current: Bool = true) -> StorageWarningLevel? {
+        guard current, isUsable, threshold > 0 else { return nil }
+        let remaining = Double(free) / Double(total) * 100
+        if remaining <= min(5, Double(threshold)) { return .critical }
+        if remaining <= Double(threshold) { return .low }
+        return nil
     }
 
     var formattedTotal: String {
@@ -157,6 +172,7 @@ struct UnraidDisk: Codable, Hashable, Identifiable {
     let type: DiskType
     let device: String?
     let serial: String?
+    var filesystemCapacity: ArrayCapacity? = nil
 
     nonisolated var usagePercentage: Double {
         guard size > 0 else { return 0 }
@@ -592,6 +608,7 @@ nonisolated struct DiskData: Codable {
     let id: String?
     let name: String?
     let size: IntOrString?
+    var fsSize: IntOrString? = nil
     let fsUsed: IntOrString?  // Unraid 7.2+: filesystem used space in KB
     let fsFree: IntOrString?  // Unraid 7.2+: filesystem free space in KB
     let status: String?

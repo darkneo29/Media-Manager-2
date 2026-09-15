@@ -101,3 +101,15 @@ Follow-up validation: all 23 targeted checks passed (20 service tests and three 
 ### Dashboard behavior away from LAN
 
 Server Health now hides its entire header and card for connectivity failures, including offline, DNS, connection loss/refusal, and timeout errors. The decision uses typed transport errors and also hides previously cached values while unreachable. Its lifecycle-bound polling continues while hidden; a foreground return bypasses ordinary read backoff to check again. Configuration/permission failures remain distinguishable from being away from the network. Regression coverage checks offline and recovered snapshots and dashboard visibility for unreachable versus reachable servers.
+
+
+### Storage and cache warnings (September 15, 2026)
+
+- Inventory reads now include `fsSize` and `fsFree` alongside `fsUsed`, all documented as KB in the [official schema](https://github.com/unraid/api/blob/main/api/generated-schema.graphql). Filesystem totals remain separate from physical device sizes; absent, negative, inconsistent, or overflowing values are unavailable rather than inferred as free space.
+- Array capacity, individual data disks, and cache filesystems show usage bars and used/free space. Cache entries retain their server-reported identities and are never summed, because multiple devices can report the same pool filesystem. The overview's array capacity excludes cache capacity.
+- The Unraid settings screen offers a local warning threshold of 5/10/15/20/25 percent free or Off, defaulting to 10. Critical warnings start at 5 percent free. The dashboard also surfaces low array space. These are in-app warnings, not background notifications.
+- Failed reads retain labelled last-known capacity without generating fresh warnings; stopped arrays suppress capacity warnings. Existing away-from-LAN dashboard hiding remains in place.
+- The current SABnzbd models do not establish a download-directory-to-Unraid-filesystem mapping. Queue size is therefore not compared against an assumed destination.
+- Regression coverage exercises threshold boundaries, disabled/stale warnings, invalid values and overflow, physical-versus-filesystem size, missing cache readings, and array/cache separation. A simulator fixture exercises low array space, critical cache space, and unavailable cache usage.
+
+Validation: 20 Unraid service tests passed, including the two storage regressions. The storage UI test passed on iPhone 17 Pro / iOS 26.5 after correcting its decimal-versus-binary formatting expectation; a separate simulator Busy launch failure was resolved by completing a fresh boot. iOS Debug test build and tvOS Debug simulator build passed. Storage/cache and disk-grid screenshots were inspected. Final UI result: `/tmp/media-storage-visual.xcresult`; service results: `/tmp/media-storage-tests.xcresult` (its original UI assertion failure was fixed and verified in the later UI run). Live-server capacity readings remain unverified.

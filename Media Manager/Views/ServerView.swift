@@ -227,9 +227,14 @@ struct ServerView: View {
                 }
                 UnraidSectionMessage(title: "System", error: snapshot?.overview.system.error, updatedAt: snapshot?.overview.system.updatedAt)
                 UnraidSectionMessage(title: "Metrics", error: snapshot?.overview.metrics.error, updatedAt: snapshot?.overview.metrics.updatedAt)
-                if let array { StorageOverviewCard(array: array, diskInventory: snapshot?.disks.error == nil ? snapshot?.disks.value?.disks : nil) }
+                if let array { StorageOverviewCard(array: array, diskInventory: snapshot?.disks.error == nil ? snapshot?.disks.value?.disks : nil, readingsCurrent: snapshot?.overview.storage.error == nil) }
                 UnraidSectionMessage(title: "Storage", error: snapshot?.overview.storage.error, updatedAt: snapshot?.overview.storage.updatedAt)
-                if let disks = snapshot?.disks.value?.disks, !disks.isEmpty { disksSection(disks: disks) }
+                if let disks = snapshot?.disks.value?.disks, !disks.isEmpty {
+                    if disks.contains(where: { $0.type == .cache }) {
+                        UnraidCacheStorageCard(disks: disks, current: snapshot?.disks.error == nil && snapshot?.disks.value?.state.isOnline == true)
+                    }
+                    disksSection(disks: disks)
+                }
                 UnraidSectionMessage(title: "Disks", error: snapshot?.disks.error, updatedAt: snapshot?.disks.updatedAt)
                 if let parity = snapshot?.parity.value { UnraidParityCard(parity: parity) }
                 UnraidSectionMessage(title: "Parity", error: snapshot?.parity.error, updatedAt: snapshot?.parity.updatedAt)
@@ -278,7 +283,7 @@ struct ServerView: View {
 
             LazyVGrid(columns: diskGridColumns, spacing: AppSpacing.sm) {
                 ForEach(disks) { disk in
-                    CompactDiskCard(disk: disk)
+                    CompactDiskCard(disk: disk, readingsCurrent: snapshot?.disks.error == nil && snapshot?.disks.value?.state.isOnline == true)
                 }
             }
         }

@@ -191,6 +191,7 @@ private struct StatusIndicator: View {
 
 struct CompactDiskCard: View {
     let disk: UnraidDisk
+    var readingsCurrent = true
     @AppStorage("unraidTemperatureUnit") private var temperatureUnit: String = "celsius"
 
     var body: some View {
@@ -215,7 +216,7 @@ struct CompactDiskCard: View {
 
             // Size and Temp
             HStack {
-                Text(disk.formattedSize)
+                Text("Device: \(disk.formattedSize)")
                     .font(AppTypography.caption2())
                     .foregroundColor(ColorPalette.textSecondaryDark)
 
@@ -226,6 +227,9 @@ struct CompactDiskCard: View {
                         .font(AppTypography.caption2(.medium))
                         .foregroundColor(tempColor)
                 }
+            }
+            if disk.type == .data || disk.type == .cache {
+                UnraidCapacityView(title: "", capacity: disk.filesystemCapacity, current: readingsCurrent, compact: true)
             }
         }
         .padding(AppSpacing.sm)

@@ -12,6 +12,8 @@ struct ServerHealthWidget: View {
     @State private var hasError = false
     @State private var hideForConnection = true
     @State private var sectionErrors: [String] = []
+    @AppStorage("unraidStorageWarningPercent") private var storageWarningPercent = 10
+    @State private var storageCurrent = false
     @State private var containersKnown = false
     @State private var isVisible = false
     @State private var loadRequestID = UUID()
@@ -172,6 +174,11 @@ struct ServerHealthWidget: View {
                         .font(AppTypography.caption2())
                         .foregroundColor(ColorPalette.textMutedDark)
                 }
+                if let level = array.capacity.warningLevel(threshold: storageWarningPercent, current: storageCurrent && array.state.isOnline) {
+                    Label("\(level == .critical ? "Array space critically low" : "Array space low"): \(array.capacity.formattedFree) free", systemImage: "exclamationmark.triangle.fill")
+                        .font(AppTypography.caption2(.semibold))
+                        .foregroundColor(level == .critical ? ColorPalette.error : ColorPalette.warning)
+                }
             } else if containersKnown {
                 Text("\(runningContainers)/\(totalContainers) containers")
                     .font(AppTypography.caption2())
@@ -213,6 +220,7 @@ struct ServerHealthWidget: View {
             hideForConnection = data.connectionUnavailable
             systemInfo = data.system.value
             array = data.storage.value
+            storageCurrent = data.storage.error == nil
             runningContainers = data.containers.value?.filter { $0.state.isRunning }.count ?? 0
             totalContainers = data.containers.value?.count ?? 0
             containersKnown = data.containers.value != nil && data.containers.error == nil
@@ -222,6 +230,7 @@ struct ServerHealthWidget: View {
             guard !Task.isCancelled else { return }
             hideForConnection = UnraidService.isConnectivityFailure(error)
             hasError = true
+            storageCurrent = false
             sectionErrors = [error.localizedDescription]
         }
     }

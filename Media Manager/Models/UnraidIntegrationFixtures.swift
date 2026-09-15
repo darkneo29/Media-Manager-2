@@ -11,6 +11,7 @@ enum UnraidIntegrationFixtures {
         defaults["unraidURL"] = "https://unraid-fixture.invalid"
         defaults["unraidAPIKey"] = "synthetic-offline-key"
         defaults["iCloudSyncEnabled"] = false
+        defaults["unraidStorageWarningPercent"] = 10
         for name in ["radarrURL", "sonarrURL", "sabnzbURL"] { defaults[name] = "" }
         UserDefaults.standard.setVolatileDomain(defaults, forName: UserDefaults.argumentDomain)
         UnraidService.shared.statsSocketFactory = { _ in UnraidFixtureSocket() }
@@ -79,6 +80,12 @@ private final class UnraidFixtureProtocol: URLProtocol, @unchecked Sendable {
             body = ["docker": ["containers": [["id": "server:plex", "names": ["/Plex"], "image": "plex:latest", "state": "RUNNING", "status": "Up 3 hours", "autoStart": true]]]]
         } else if query.contains("Storage") || query.contains("Disks") {
             body = ["array": ["state": "STARTED", "capacity": ["kilobytes": ["total": "10000000000", "used": "5000000000", "free": "5000000000"]], "disks": [], "caches": [], "parities": []]]
+            if ProcessInfo.processInfo.arguments.contains("--unraid-storage-warnings") {
+                body = ["array": ["state": "STARTED", "capacity": ["kilobytes": ["total": "10000000000", "used": "9200000000", "free": "800000000"]],
+                    "disks": [["id": "disk1", "name": "disk1", "type": "DATA", "size": "10000000000", "fsSize": "10000000000", "fsUsed": "9200000000", "fsFree": "800000000", "status": "DISK_OK"]],
+                    "caches": [["id": "cache", "name": "Download cache", "type": "CACHE", "size": "2000000000", "fsSize": "1000000000", "fsUsed": "982000000", "fsFree": "18000000", "status": "DISK_OK"],
+                               ["id": "cache2", "name": "Cache member", "type": "CACHE", "size": "1000000000", "status": "DISK_OK"]], "parities": []]]
+            }
         }
         let reply: [String: Any] = ["data": body]
         if query.contains("mutation") {

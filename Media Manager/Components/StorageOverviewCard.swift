@@ -3,6 +3,7 @@ import SwiftUI
 struct StorageOverviewCard: View {
     let array: UnraidArray
     var diskInventory: [UnraidDisk]? = nil
+    var readingsCurrent = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppSpacing.md) {
@@ -31,50 +32,7 @@ struct StorageOverviewCard: View {
                 .cornerRadius(AppRadius.pill)
             }
 
-            // Capacity Section
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                // Progress Bar
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        // Background
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(ColorPalette.surfaceDark)
-                            .frame(height: 12)
-
-                        // Used Space
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(usageGradient)
-                            .frame(
-                                width: geometry.size.width * min(array.capacity.usagePercentage / 100, 1.0),
-                                height: 12
-                            )
-                    }
-                }
-                .frame(height: 12)
-
-                // Capacity Text
-                HStack {
-                    Text("\(array.capacity.formattedUsed) / \(array.capacity.formattedTotal)")
-                        .font(AppTypography.subheadline(.medium))
-                        .foregroundColor(ColorPalette.textPrimaryDark)
-
-                    Spacer()
-
-                    Text("\(Int(array.capacity.usagePercentage))% used")
-                        .font(AppTypography.caption1())
-                        .foregroundColor(ColorPalette.textSecondaryDark)
-                }
-
-                // Free Space
-                HStack(spacing: 4) {
-                    Image(systemName: "internaldrive")
-                        .font(.system(size: 12))
-                        .foregroundColor(ColorPalette.success)
-                    Text("\(array.capacity.formattedFree) free")
-                        .font(AppTypography.caption1())
-                        .foregroundColor(ColorPalette.success)
-                }
-            }
+            UnraidCapacityView(title: "Array", capacity: array.capacity, current: readingsCurrent && array.state.isOnline)
 
             // Parity Status (if available)
             if let parity = array.parity {
@@ -150,20 +108,6 @@ struct StorageOverviewCard: View {
         )
     }
 
-    private var usageGradient: LinearGradient {
-        let percentage = array.capacity.usagePercentage
-        let colors: [Color]
-
-        if percentage < 70 {
-            colors = [ColorPalette.secondary, ColorPalette.secondaryDark]
-        } else if percentage < 85 {
-            colors = [ColorPalette.warning, ColorPalette.warningDark]
-        } else {
-            colors = [ColorPalette.error, ColorPalette.errorDark]
-        }
-
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-    }
 }
 
 // MARK: - Disk Type Summary
@@ -216,5 +160,79 @@ private struct DiskTypeSummary: View {
             )
         )
         .padding()
+    }
+}
+
+/// Shared by array, cache, and disk displays. Only current readings generate warnings.
+struct UnraidCapacityView: View {
+    let title: String
+    let capacity: ArrayCapacity?
+    var current = true
+    var compact = false
+    @AppStorage("unraidStorageWarningPercent") private var warningPercent = 10
+
+    private var level: StorageWarningLevel? {
+        capacity?.warningLevel(threshold: warningPercent, current: current)
+    }
+    private var tint: Color {
+        guard current else { return ColorPalette.textMutedDark }
+        switch level {
+        case .critical: return ColorPalette.error
+        case .low: return ColorPalette.warning
+        case nil: return ColorPalette.secondary
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            if !title.isEmpty {
+                Text(title).font(AppTypography.subheadline(.semibold))
+                    .foregroundColor(ColorPalette.textPrimaryDark)
+            }
+            if let capacity, capacity.isUsable {
+                ProgressView(value: capacity.usagePercentage, total: 100).tint(tint)
+                    .accessibilityLabel("\(title.isEmpty ? "Filesystem" : title) space used")
+                Text("\(capacity.formattedUsed) / \(capacity.formattedTotal) used (\(Int(capacity.usagePercentage))%)")
+                    .font(AppTypography.caption2()).foregroundColor(ColorPalette.textSecondaryDark)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(capacity.formattedFree) free")
+                    .font(AppTypography.caption1(.medium)).foregroundColor(tint)
+                if !current {
+                    Text("Last known usage").font(AppTypography.caption2()).foregroundColor(ColorPalette.textMutedDark)
+                } else if let level {
+                    Label(level == .critical ? "Critically low space" : "Low space", systemImage: "exclamationmark.triangle.fill")
+                        .font(AppTypography.caption2(.semibold)).foregroundColor(tint)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !compact {
+                        Text("Downloads and imports using this storage may fail. Free up space or choose another destination.")
+                            .font(AppTypography.caption2()).foregroundColor(ColorPalette.textSecondaryDark)
+                    }
+                }
+            } else {
+                Text("Filesystem usage unavailable")
+                    .font(AppTypography.caption2()).foregroundColor(ColorPalette.textMutedDark)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+struct UnraidCacheStorageCard: View {
+    let disks: [UnraidDisk]
+    var current = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            Text("Cache storage").font(AppTypography.headline(.semibold))
+                .foregroundColor(ColorPalette.textPrimaryDark)
+            Text("Filesystem readings reported for each cache entry. Shared pool capacity is not added together.")
+                .font(AppTypography.caption2()).foregroundColor(ColorPalette.textMutedDark)
+            ForEach(disks.filter { $0.type == .cache }) { disk in
+                UnraidCapacityView(title: disk.name, capacity: disk.filesystemCapacity, current: current)
+            }
+        }
+        .padding(AppSpacing.md)
+        .background(ColorPalette.cardBackgroundDark)
+        .cornerRadius(AppRadius.lg)
     }
 }

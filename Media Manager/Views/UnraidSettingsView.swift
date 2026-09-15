@@ -8,6 +8,7 @@ struct UnraidSettingsView: View {
     @State private var editingURL: String = ""
     @State private var editingAPIKey: String = ""
     @State private var showMediaStackFirst: Bool = true
+    @AppStorage("unraidStorageWarningPercent") private var storageWarningPercent = 10
     @State private var temperatureUnit: String = "celsius"
 
     @State private var connectionStatus: ConnectionStatus = .idle
@@ -137,6 +138,8 @@ struct UnraidSettingsView: View {
                             subtitle: "Show Radarr, Sonarr, etc. at the top",
                             isOn: $showMediaStackFirst
                         )
+
+                        storageWarningSettings
 
                         // Temperature Unit Picker
                         TVPickerCard(
@@ -363,6 +366,8 @@ struct UnraidSettingsView: View {
                         Divider()
                             .background(ColorPalette.divider)
 
+                        storageWarningSettings
+
                         // Temperature Unit Picker
                         HStack {
                             Text("Temperature Unit")
@@ -415,6 +420,20 @@ struct UnraidSettingsView: View {
     #endif
 
     // MARK: - Settings Persistence
+
+    private var storageWarningSettings: some View {
+        VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            Picker("Low-space warning", selection: $storageWarningPercent) {
+                Text("Off").tag(0)
+                ForEach([5, 10, 15, 20, 25], id: \.self) { percent in
+                    Text("\(percent)% free or less").tag(percent)
+                }
+            }
+            Text("Applies to array, data disks, and cache filesystems. Critical at 5% free or less. Warnings appear in the app when current readings are available.")
+                .font(AppTypography.caption2()).foregroundColor(ColorPalette.textMutedDark)
+        }
+        .padding()
+    }
 
     private func loadSettings() {
         let defaults = UserDefaults.standard

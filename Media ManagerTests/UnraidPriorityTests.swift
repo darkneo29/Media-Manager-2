@@ -126,6 +126,39 @@ struct UnraidPriorityTests {
     private static func vm(_ state: String) -> String { "{\"data\":{\"vms\":{\"domains\":[{\"id\":\"server:vm1\",\"name\":\"Linux\",\"state\":\"\(state)\"}]}}}" }
 
     @Test @MainActor
+    func storageWarningBoundariesAndUnavailableReadings() {
+        let low = ArrayCapacity(total: 1000, used: 900, free: 100)
+        #expect(low.warningLevel(threshold: 10) == .low)
+        #expect(low.warningLevel(threshold: 5) == nil)
+        #expect(low.warningLevel(threshold: 0) == nil)
+        #expect(low.warningLevel(threshold: 10, current: false) == nil)
+        #expect(ArrayCapacity(total: 1000, used: 950, free: 50).warningLevel(threshold: 10) == .critical)
+        #expect(ArrayCapacity(total: 1000, used: 1000, free: 0).warningLevel(threshold: 10) == .critical)
+        #expect(ArrayCapacity(total: 0, used: 0, free: 0).warningLevel(threshold: 10) == nil)
+        #expect(ArrayCapacity(total: 100, used: 110, free: 0).warningLevel(threshold: 10) == nil)
+        #expect(ArrayCapacity(total: 100, used: 95, free: 10).warningLevel(threshold: 10) == nil)
+        #expect(ArrayCapacity(total: Int64.max, used: Int64.max, free: Int64.max).isUsable == false)
+    }
+
+    @Test @MainActor
+    func filesystemCapacityUsesFilesystemInsteadOfPhysicalSize() throws {
+        let (service, session) = service(); defer { session.invalidateAndCancel() }
+        let json = #"{"state":"STARTED","capacity":{"kilobytes":{"total":"100000","used":"50000","free":"50000"}},"disks":[],"caches":[{"id":"cache","name":"cache","type":"CACHE","size":"2000","fsSize":"1000","fsUsed":950,"fsFree":"50"},{"id":"cache2","type":"CACHE","size":"2000","fsUsed":"0"}],"parities":[{"id":"parity","type":"PARITY","size":"2000"}]}"#
+        let parsed = service.parseArray(from: try JSONDecoder().decode(ArrayData.self, from: Data(json.utf8)))
+        let cache = try #require(parsed.disks.first { $0.id == "cache" })
+        #expect(cache.size == 2_000_000)
+        #expect(cache.filesystemCapacity == ArrayCapacity(total: 1_000_000, used: 950_000, free: 50_000))
+        #expect(parsed.disks.first { $0.id == "cache2" }?.filesystemCapacity == nil)
+        #expect(parsed.disks.first { $0.id == "parity" }?.filesystemCapacity == nil)
+        #expect(parsed.capacity.total == 100_000_000) // Cache is never added to array capacity.
+        for invalid in ["-1", "invalid", "9223372036854775807"] {
+            let changed = json.replacingOccurrences(of: "\"fsFree\":\"50\"", with: "\"fsFree\":\"\(invalid)\"")
+            let invalidArray = service.parseArray(from: try JSONDecoder().decode(ArrayData.self, from: Data(changed.utf8)))
+            #expect(invalidArray.disks.first { $0.id == "cache" }?.filesystemCapacity == nil)
+        }
+    }
+
+    @Test @MainActor
     func overviewIsSmallAndFailuresAreIndependent() async throws {
         let (service, session) = service(); defer { session.invalidateAndCancel() }
         PriorityURLProtocol.state.set("ContainerSummary", [.init(body: #"{"data":null,"errors":[{"message":"Docker denied","path":["docker","containers",0]}]}"#)])

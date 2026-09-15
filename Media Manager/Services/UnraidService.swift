@@ -99,10 +99,10 @@ final class UnraidService {
     array {
         state
         capacity { kilobytes { total used free } }
-        disks { id name size fsUsed status temp type device }
-        caches { id name size fsUsed status temp type device }
-        parities { id name size fsUsed status temp type device }
-        boot { id name size fsUsed status temp type device }
+        disks { id name size fsSize fsUsed fsFree status temp type device }
+        caches { id name size fsSize fsUsed fsFree status temp type device }
+        parities { id name size fsSize fsUsed fsFree status temp type device }
+        boot { id name size fsSize fsUsed fsFree status temp type device }
     }
     """
 
@@ -398,6 +398,23 @@ final class UnraidService {
             // fsUsed is in KB
             let usedBytes = Self.saturatingKilobytes(Int64(disk.fsUsed?.intValue ?? 0))
 
+            // Filesystem capacity can differ from physical size, especially for pools.
+            // Never infer free space from physical size or turn missing values into zero.
+            func filesystemNumber(_ value: DiskData.IntOrString?) -> Int64? {
+                switch value {
+                case .int(let number): return Int64(number)
+                case .string(let number): return Int64(number)
+                case nil: return nil
+                }
+            }
+            var filesystemCapacity: ArrayCapacity?
+            if let total = filesystemNumber(disk.fsSize), let used = filesystemNumber(disk.fsUsed),
+               let free = filesystemNumber(disk.fsFree), total > 0, used >= 0, free >= 0,
+               total <= Int64.max / 1000, used <= Int64.max / 1000, free <= Int64.max / 1000 {
+                let capacity = ArrayCapacity(total: Int64(total) * 1000, used: Int64(used) * 1000, free: Int64(free) * 1000)
+                if capacity.isUsable { filesystemCapacity = capacity }
+            }
+
             return UnraidDisk(
                 id: disk.id ?? disk.name ?? disk.device ?? "unknown",
                 name: disk.name ?? disk.device ?? "Unknown disk",
@@ -407,7 +424,8 @@ final class UnraidService {
                 temperature: disk.temp,
                 type: parseDiskType(disk.type ?? disk.name ?? ""),
                 device: disk.device,
-                serial: disk.serial
+                serial: disk.serial,
+                filesystemCapacity: filesystemCapacity
             )
         }
 

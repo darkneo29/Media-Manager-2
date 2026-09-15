@@ -394,6 +394,31 @@ extension Media_ManagerUITests {
     }
 
     @MainActor
+    func testUnraidStorageWarnings() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--unraid-integration-fixtures", "--unraid-storage-warnings"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["TEST TOWER"].waitForExistence(timeout: 15))
+        let cache = app.staticTexts["Cache storage"]
+        for _ in 0..<4 { if cache.isHittable { break }; app.swipeUp() }
+        XCTAssertTrue(cache.exists)
+        let critical = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Critically low space")).firstMatch
+        XCTAssertTrue(critical.exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "16.76 GB free")).firstMatch.exists)
+        let unavailable = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Filesystem usage unavailable")).firstMatch
+        XCTAssertTrue(unavailable.exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "Unraid storage and cache warnings"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.swipeUp()
+        let inventory = XCTAttachment(screenshot: app.screenshot())
+        inventory.name = "Unraid filesystem inventory"
+        inventory.lifetime = .keepAlways
+        add(inventory)
+    }
+
+    @MainActor
     func testUnraidPartialSectionsAndContainerDiagnostics() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--unraid-integration-fixtures", "--unraid-partial"]
