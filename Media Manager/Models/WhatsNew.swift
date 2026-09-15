@@ -37,7 +37,7 @@ enum WhatsNewCatalog {
         WhatsNewRelease(
             id: "2026-09-15-version-3.0-build-19",
             title: "Version 3.0 Build 19",
-            subtitle: "New OS 27 features with continued OS 26 support",
+            subtitle: "Smarter Siri, stronger Unraid tools, refreshed Apple TV, and OS 27 features",
             entries: [
                 WhatsNewEntry(
                     id: "os27-library-assistant",
@@ -56,6 +56,48 @@ enum WhatsNewCatalog {
                     kind: .improvement,
                     title: "More Accurate Siri and Shortcuts Actions",
                     description: "Ask Siri to add a movie or TV show by title, with clearer follow-up choices for matching titles. Selected-title and Quick Add actions keep your saved preferences, and successful adds appear in your library immediately."
+                ),
+                WhatsNewEntry(
+                    id: "siri-add-error-recovery",
+                    kind: .fix,
+                    title: "Clearer Siri Add Feedback",
+                    description: "Siri cancellations and server failures are handled correctly, and setup errors are no longer mistaken for titles already in your library. Missing quality profiles or root folders prompt you to finish server setup before adding."
+                ),
+                WhatsNewEntry(
+                    id: "unraid-controls-3",
+                    kind: .improvement,
+                    title: "More Reliable Unraid Controls",
+                    description: "Improved Docker and virtual machine actions with restart compatibility, protection against duplicate commands, and checks that VM actions completed. Controls reflect server capabilities and permissions when available."
+                ),
+                WhatsNewEntry(
+                    id: "unraid-diagnostics-3",
+                    kind: .newFeature,
+                    title: "Deeper Server Diagnostics",
+                    description: "View recent container logs, live container CPU, memory, network, and disk activity, plus parity-check status and progress where supported by your Unraid server."
+                ),
+                WhatsNewEntry(
+                    id: "unraid-monitoring-3",
+                    kind: .improvement,
+                    title: "Resilient Server Monitoring",
+                    description: "Server sections refresh independently so a failed section does not hide healthy information. Refreshing follows app activity, and Server Health hides when Unraid is unreachable while checking for recovery."
+                ),
+                WhatsNewEntry(
+                    id: "apple-tv-refresh-3",
+                    kind: .improvement,
+                    title: "A Refreshed Apple TV Experience",
+                    description: "Larger text, posters, and controls make browsing easier from the couch. Clearer remote focus, dedicated library actions, full-screen Add Options, and improved forms, downloads, and calendar navigation make everyday tasks easier."
+                ),
+                WhatsNewEntry(
+                    id: "icloud-setup-sync-3",
+                    kind: .improvement,
+                    title: "Share Your Setup with iCloud",
+                    description: "Encrypted iCloud syncing shares server settings and API keys across your configured devices, including Apple TV. Improved handling of conflicting edits, removed settings, account changes, and connection failures keeps sync feedback clearer."
+                ),
+                WhatsNewEntry(
+                    id: "iphone-more-navigation-3",
+                    kind: .improvement,
+                    title: "Simpler iPhone Navigation",
+                    description: "A dedicated More tab brings Downloads, Calendar, Unraid, and Settings together, with improved navigation and direct links into those screens."
                 ),
                 WhatsNewEntry(
                     id: "configurable-upcoming-widget",
