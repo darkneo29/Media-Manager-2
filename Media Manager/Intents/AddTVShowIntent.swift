@@ -57,7 +57,7 @@ struct AddTVShowIntent: AppIntent {
     static var openAppWhenRun: Bool = false
 
     /// The TV show title to search for
-    @Parameter(title: "TV Show Title", description: "The name of the TV show to search for")
+    @Parameter(title: "TV Show Title", requestValueDialog: "Which TV show would you like to add?")
     var searchTerm: String
 
     /// Monitor option
@@ -90,7 +90,8 @@ struct AddTVShowIntent: AppIntent {
 
         do {
             // Search for TV shows
-            let searchResults = try await SonarrService.shared.searchShows(term: trimmedTerm)
+            let lookupResults = try await SonarrService.shared.searchShows(term: trimmedTerm)
+            let searchResults = MediaEntityResolution.exactCatalogMatches(lookupResults, term: trimmedTerm, prefix: "tvdb", id: \.tvdbId)
 
             guard !searchResults.isEmpty else {
                 return .result(
@@ -104,34 +105,19 @@ struct AddTVShowIntent: AppIntent {
             if searchResults.count == 1 {
                 selectedShow = searchResults[0]
             } else {
-                // Create string options for disambiguation
-                let options = searchResults.prefix(10).map { show -> String in
-                    var option = "\(show.title) (\(show.year))"
-                    if show.seasonCount > 0 {
-                        option += " - \(show.seasonCount) Season\(show.seasonCount != 1 ? "s" : "")"
-                    }
-                    return option
-                }
-                let selectedOption = try await $searchTerm.requestDisambiguation(
-                    among: Array(options),
-                    dialog: IntentDialog("Multiple TV shows found. Which one did you mean?")
+                let choices = Array(searchResults.prefix(10))
+                let labels = MediaEntityResolution.choiceLabels(choices, title: \.title, year: \.year, id: \.tvdbId)
+                let selection = try await $searchTerm.requestDisambiguation(
+                    among: labels, dialog: "Which TV show did you mean?"
                 )
-
-                // Find the matching TVShowLookup
-                guard let match = searchResults.prefix(10).enumerated().first(where: { index, _ in
-                    options[index] == selectedOption
-                })?.element else {
-                    return .result(
-                        value: "Could not find selected TV show",
-                        dialog: "Failed to find the selected TV show. Please try again."
-                    )
-                }
-                selectedShow = match
+                guard let index = labels.firstIndex(of: selection) else { throw MediaAddSelectionError.invalidChoice }
+                selectedShow = choices[index]
             }
 
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
+            guard !qualityProfiles.isEmpty, !rootFolders.isEmpty else { throw MediaAddSelectionError.missingAddOptions }
             let tags = try? await SonarrService.shared.fetchTags()
             var preferences = AddMediaPreferences.shared.sonarrSettings(
                 profiles: qualityProfiles,
@@ -155,6 +141,7 @@ struct AddTVShowIntent: AppIntent {
                 searchForCutoffUnmetEpisodes: preferences.searchForCutoffUnmetEpisodes,
                 tagIds: preferences.tagIds
             )
+            LibraryStateManager.shared.addShowLocally(addedShow)
 
             let searchStatus = searchForEpisodes ? " and started searching for episodes" : ""
             let monitorStatus = monitorOption == .all ? "" : " (monitoring \(monitorOption.rawValue))"
@@ -163,33 +150,23 @@ struct AddTVShowIntent: AppIntent {
                 dialog: IntentDialog(stringLiteral: "Added '\(addedShow.title)' (\(addedShow.year)) to Sonarr\(monitorStatus)\(searchStatus).")
             )
 
-        } catch {
-            // Check if it's an "already exists" error
-            let errorMessage = error.localizedDescription
-            if errorMessage.localizedCaseInsensitiveContains("already") ||
-                errorMessage.localizedCaseInsensitiveContains("exists") {
-                return .result(
-                    value: "TV show already in library",
-                    dialog: "This TV show is already in your Sonarr library."
-                )
-            }
-
+        } catch SonarrError.showAlreadyExists(let title) {
             return .result(
-                value: "Failed to add TV show",
-                dialog: "Failed to add TV show: \(errorMessage)"
+                value: "Already in library",
+                dialog: IntentDialog(stringLiteral: "'\(title)' is already in your library.")
             )
         }
     }
 }
 
-/// Simpler quick-add intent that adds the first match without disambiguation
+/// Simpler quick-add intent that uses saved defaults and disambiguates title collisions
 struct QuickAddTVShowIntent: AppIntent {
     static var title: LocalizedStringResource = "Quick Add TV Show"
-    static var description = IntentDescription("Quickly adds the best matching TV show to Sonarr without confirmation.")
+    static var description = IntentDescription("Adds the selected TV show to Sonarr using your saved preferences; asks when titles are ambiguous.")
 
     static var openAppWhenRun: Bool = false
 
-    @Parameter(title: "TV Show Title")
+    @Parameter(title: "TV Show Title", requestValueDialog: "Which TV show would you like to add?")
     var searchTerm: String
 
     @MainActor
@@ -212,7 +189,8 @@ struct QuickAddTVShowIntent: AppIntent {
         }
 
         do {
-            let searchResults = try await SonarrService.shared.searchShows(term: trimmedTerm)
+            let lookupResults = try await SonarrService.shared.searchShows(term: trimmedTerm)
+            let searchResults = MediaEntityResolution.exactCatalogMatches(lookupResults, term: trimmedTerm, prefix: "tvdb", id: \.tvdbId)
 
             guard let firstResult = searchResults.first else {
                 return .result(
@@ -221,9 +199,21 @@ struct QuickAddTVShowIntent: AppIntent {
                 )
             }
 
+            let selectedResult: TVShowLookup
+            if searchResults.count > 1 {
+                let choices = Array(searchResults.prefix(10))
+                let labels = MediaEntityResolution.choiceLabels(choices, title: \.title, year: \.year, id: \.tvdbId)
+                let selection = try await $searchTerm.requestDisambiguation(
+                    among: labels, dialog: "Which title did you mean?"
+                )
+                guard let index = labels.firstIndex(of: selection) else { throw MediaAddSelectionError.invalidChoice }
+                selectedResult = choices[index]
+            } else { selectedResult = firstResult }
+
             // Get defaults
             let qualityProfiles = try await SonarrService.shared.fetchQualityProfiles()
             let rootFolders = try await SonarrService.shared.fetchRootFolders()
+            guard !qualityProfiles.isEmpty, !rootFolders.isEmpty else { throw MediaAddSelectionError.missingAddOptions }
             let tags = try? await SonarrService.shared.fetchTags()
             let preferences = AddMediaPreferences.shared.sonarrSettings(
                 profiles: qualityProfiles,
@@ -232,7 +222,7 @@ struct QuickAddTVShowIntent: AppIntent {
             )
 
             let addedShow = try await SonarrService.shared.addShow(
-                show: firstResult,
+                show: selectedResult,
                 monitorOption: preferences.monitorOption,
                 qualityProfileId: preferences.qualityProfileId,
                 rootFolderPath: preferences.rootFolderPath,
@@ -244,24 +234,17 @@ struct QuickAddTVShowIntent: AppIntent {
                 searchForCutoffUnmetEpisodes: preferences.searchForCutoffUnmetEpisodes,
                 tagIds: preferences.tagIds
             )
+            LibraryStateManager.shared.addShowLocally(addedShow)
 
             return .result(
                 value: "Added \(addedShow.title)",
                 dialog: IntentDialog(stringLiteral: "Added '\(addedShow.title)' (\(addedShow.year)) to Sonarr.")
             )
 
-        } catch {
-            let errorMessage = error.localizedDescription
-            if errorMessage.localizedCaseInsensitiveContains("already") ||
-                errorMessage.localizedCaseInsensitiveContains("exists") {
-                return .result(
-                    value: "TV show already exists",
-                    dialog: "This TV show is already in your library."
-                )
-            }
+        } catch SonarrError.showAlreadyExists(let title) {
             return .result(
-                value: "Failed to add TV show",
-                dialog: "Error: \(errorMessage)"
+                value: "Already in library",
+                dialog: IntentDialog(stringLiteral: "'\(title)' is already in your library.")
             )
         }
     }

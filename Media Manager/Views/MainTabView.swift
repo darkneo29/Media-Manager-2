@@ -39,6 +39,7 @@ struct MainTabView: View {
 
     init() {
         #if !os(tvOS)
+        if #available(iOS 27.0, *) { return }
         // Configure tab bar appearance for dark theme
         let tabBarAppearance = UITabBarAppearance()
         tabBarAppearance.configureWithOpaqueBackground()
@@ -92,6 +93,16 @@ struct MainTabView: View {
             }
             #endif
         }
+        #if os(iOS)
+        .sheet(isPresented: Binding(
+            get: { deepLinkHandler.pendingLibrarySearch != nil },
+            set: { if !$0 { deepLinkHandler.pendingLibrarySearch = nil } }
+        )) {
+            if #available(iOS 27.0, *) {
+                LibraryAssistantView(query: deepLinkHandler.pendingLibrarySearch ?? "")
+            }
+        }
+        #endif
         .onChange(of: deepLinkHandler.pendingDestination) { _, destination in
             handleDeepLink(destination)
         }

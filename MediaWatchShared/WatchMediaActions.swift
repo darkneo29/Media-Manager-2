@@ -10,6 +10,7 @@ enum WatchConnectivityKey {
 }
 
 enum WatchConnectivityCommand {
+    nonisolated static let librarySummary = "librarySummary"
     nonisolated static let setDownloadsPaused = "setDownloadsPaused"
     nonisolated static let addMedia = "addMedia"
     nonisolated static let refreshDownloads = "refreshDownloads"

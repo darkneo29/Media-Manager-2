@@ -9,7 +9,7 @@ struct AddMovieIntent: AppIntent {
     static var openAppWhenRun: Bool = false
 
     /// The movie title to search for
-    @Parameter(title: "Movie Title", description: "The name of the movie to search for")
+    @Parameter(title: "Movie Title", requestValueDialog: "Which movie would you like to add?")
     var searchTerm: String
 
     /// Whether to start searching for the movie after adding
@@ -38,7 +38,8 @@ struct AddMovieIntent: AppIntent {
 
         do {
             // Search for movies
-            let searchResults = try await RadarrService.shared.searchMovies(term: trimmedTerm)
+            let lookupResults = try await RadarrService.shared.searchMovies(term: trimmedTerm)
+            let searchResults = MediaEntityResolution.exactCatalogMatches(lookupResults, term: trimmedTerm, prefix: "tmdb", id: \.tmdbId)
 
             guard !searchResults.isEmpty else {
                 return .result(
@@ -52,26 +53,19 @@ struct AddMovieIntent: AppIntent {
             if searchResults.count == 1 {
                 selectedMovie = searchResults[0]
             } else {
-                // Create string options for disambiguation
-                let options = searchResults.prefix(10).map { "\($0.title) (\($0.year))" }
-                let selectedOption = try await $searchTerm.requestDisambiguation(
-                    among: Array(options),
-                    dialog: IntentDialog("Multiple movies found. Which one did you mean?")
+                let choices = Array(searchResults.prefix(10))
+                let labels = MediaEntityResolution.choiceLabels(choices, title: \.title, year: \.year, id: \.tmdbId)
+                let selection = try await $searchTerm.requestDisambiguation(
+                    among: labels, dialog: "Which movie did you mean?"
                 )
-
-                // Find the matching MovieLookup by parsing the selected string
-                guard let match = searchResults.prefix(10).first(where: { "\($0.title) (\($0.year))" == selectedOption }) else {
-                    return .result(
-                        value: "Could not find selected movie",
-                        dialog: "Failed to find the selected movie. Please try again."
-                    )
-                }
-                selectedMovie = match
+                guard let index = labels.firstIndex(of: selection) else { throw MediaAddSelectionError.invalidChoice }
+                selectedMovie = choices[index]
             }
 
             // Get quality profiles and root folders for defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
+            guard !qualityProfiles.isEmpty, !rootFolders.isEmpty else { throw MediaAddSelectionError.missingAddOptions }
             let tags = try? await RadarrService.shared.fetchTags()
             var preferences = AddMediaPreferences.shared.radarrSettings(
                 profiles: qualityProfiles,
@@ -91,6 +85,7 @@ struct AddMovieIntent: AppIntent {
                 searchForMovie: preferences.searchForMovie,
                 tagIds: preferences.tagIds
             )
+            LibraryStateManager.shared.addMovieLocally(addedMovie)
 
             let searchStatus = searchForMovie ? " and started searching" : ""
             return .result(
@@ -98,33 +93,23 @@ struct AddMovieIntent: AppIntent {
                 dialog: IntentDialog(stringLiteral: "Added '\(addedMovie.title)' (\(addedMovie.year)) to Radarr\(searchStatus).")
             )
 
-        } catch {
-            // Check if it's an "already exists" error
-            let errorMessage = error.localizedDescription
-            if errorMessage.localizedCaseInsensitiveContains("already") ||
-                errorMessage.localizedCaseInsensitiveContains("exists") {
-                return .result(
-                    value: "Movie already in library",
-                    dialog: "This movie is already in your Radarr library."
-                )
-            }
-
+        } catch RadarrError.movieAlreadyExists(let title) {
             return .result(
-                value: "Failed to add movie",
-                dialog: "Failed to add movie: \(errorMessage)"
+                value: "Already in library",
+                dialog: IntentDialog(stringLiteral: "'\(title)' is already in your library.")
             )
         }
     }
 }
 
-/// Simpler quick-add intent that adds the first match without disambiguation
+/// Simpler quick-add intent that uses saved defaults and disambiguates title collisions
 struct QuickAddMovieIntent: AppIntent {
     static var title: LocalizedStringResource = "Quick Add Movie"
-    static var description = IntentDescription("Quickly adds the best matching movie to Radarr without confirmation.")
+    static var description = IntentDescription("Adds the selected movie to Radarr using your saved preferences; asks when titles are ambiguous.")
 
     static var openAppWhenRun: Bool = false
 
-    @Parameter(title: "Movie Title")
+    @Parameter(title: "Movie Title", requestValueDialog: "Which movie would you like to add?")
     var searchTerm: String
 
     @MainActor
@@ -147,7 +132,8 @@ struct QuickAddMovieIntent: AppIntent {
         }
 
         do {
-            let searchResults = try await RadarrService.shared.searchMovies(term: trimmedTerm)
+            let lookupResults = try await RadarrService.shared.searchMovies(term: trimmedTerm)
+            let searchResults = MediaEntityResolution.exactCatalogMatches(lookupResults, term: trimmedTerm, prefix: "tmdb", id: \.tmdbId)
 
             guard let firstResult = searchResults.first else {
                 return .result(
@@ -156,9 +142,21 @@ struct QuickAddMovieIntent: AppIntent {
                 )
             }
 
+            let selectedResult: MovieLookup
+            if searchResults.count > 1 {
+                let choices = Array(searchResults.prefix(10))
+                let labels = MediaEntityResolution.choiceLabels(choices, title: \.title, year: \.year, id: \.tmdbId)
+                let selection = try await $searchTerm.requestDisambiguation(
+                    among: labels, dialog: "Which title did you mean?"
+                )
+                guard let index = labels.firstIndex(of: selection) else { throw MediaAddSelectionError.invalidChoice }
+                selectedResult = choices[index]
+            } else { selectedResult = firstResult }
+
             // Get defaults
             let qualityProfiles = try await RadarrService.shared.fetchQualityProfiles()
             let rootFolders = try await RadarrService.shared.fetchRootFolders()
+            guard !qualityProfiles.isEmpty, !rootFolders.isEmpty else { throw MediaAddSelectionError.missingAddOptions }
             let tags = try? await RadarrService.shared.fetchTags()
             let preferences = AddMediaPreferences.shared.radarrSettings(
                 profiles: qualityProfiles,
@@ -167,7 +165,7 @@ struct QuickAddMovieIntent: AppIntent {
             )
 
             let addedMovie = try await RadarrService.shared.addMovie(
-                movie: firstResult,
+                movie: selectedResult,
                 qualityProfileId: preferences.qualityProfileId,
                 rootFolderPath: preferences.rootFolderPath,
                 minimumAvailability: preferences.minimumAvailability,
@@ -176,24 +174,17 @@ struct QuickAddMovieIntent: AppIntent {
                 searchForMovie: preferences.searchForMovie,
                 tagIds: preferences.tagIds
             )
+            LibraryStateManager.shared.addMovieLocally(addedMovie)
 
             return .result(
                 value: "Added \(addedMovie.title)",
                 dialog: IntentDialog(stringLiteral: "Added '\(addedMovie.title)' (\(addedMovie.year)) to Radarr.")
             )
 
-        } catch {
-            let errorMessage = error.localizedDescription
-            if errorMessage.localizedCaseInsensitiveContains("already") ||
-                errorMessage.localizedCaseInsensitiveContains("exists") {
-                return .result(
-                    value: "Movie already exists",
-                    dialog: "This movie is already in your library."
-                )
-            }
+        } catch RadarrError.movieAlreadyExists(let title) {
             return .result(
-                value: "Failed to add movie",
-                dialog: "Error: \(errorMessage)"
+                value: "Already in library",
+                dialog: IntentDialog(stringLiteral: "'\(title)' is already in your library.")
             )
         }
     }

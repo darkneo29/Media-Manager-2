@@ -611,6 +611,7 @@ struct TVShowDetailView: View {
                 }
             }
         }
+        .mediaEntityAnnotation(show: show)
         .navigationTitle("Details")
         .navBarTitleDisplayMode(.inline)
         .toolbar {

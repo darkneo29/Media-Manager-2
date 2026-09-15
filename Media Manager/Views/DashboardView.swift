@@ -239,8 +239,17 @@ struct DashboardView: View {
             }
             #if !os(tvOS)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(ColorPalette.backgroundDark, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                if #available(iOS 27.0, *) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Library Assistant", systemImage: "sparkles") {
+                            DeepLinkHandler.shared.pendingLibrarySearch = ""
+                        }
+                        .accessibilityIdentifier("openLibraryAssistant")
+                    }
+                }
+            }
+            .legacyMediaNavigationBackground()
             #endif
             .navigationDestination(for: Movie.self) { movie in
                 MovieDetailView(movie: movie)

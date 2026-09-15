@@ -264,8 +264,7 @@ class SonarrService {
             // Try to parse Sonarr's error response for a better message
             if let errorResponse = try? JSONDecoder().decode([RadarrErrorResponse].self, from: data),
                let firstError = errorResponse.first {
-                if firstError.errorMessage.lowercased().contains("already") ||
-                   firstError.errorMessage.lowercased().contains("exists") {
+                if firstError.isDuplicateCatalogID("TvdbId") {
                     throw SonarrError.showAlreadyExists(show.title)
                 }
                 throw SonarrError.apiError(firstError.errorMessage)

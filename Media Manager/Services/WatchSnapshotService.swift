@@ -258,6 +258,18 @@ final class WatchSnapshotService: NSObject {
     }
 
     private func reply(for message: [String: Any]) async -> [String: Any] {
+        if message[WatchConnectivityKey.command] as? String == WatchConnectivityCommand.librarySummary {
+            let library = LibraryStateManager.shared
+            await library.loadAll()
+            let snapshot = await makeSnapshot(movies: library.movies, tvShows: library.tvShows)
+            let facts = "Loaded library: \(snapshot.library.movieCount) movies and \(snapshot.library.showCount) TV shows. Downloads: \(snapshot.downloads.statusText)."
+                + (library.moviesErrorMessage == nil ? "" : " Radarr could not refresh; movie data may be outdated.")
+                + (library.showsErrorMessage == nil ? "" : " Sonarr could not refresh; show data may be outdated.")
+            if #available(iOS 27.0, *) {
+                return ["summary": await WatchLibrarySummaryGenerator.summarize(facts)]
+            }
+            return ["summary": facts]
+        }
         if message[WatchConnectivityKey.command] as? String == WatchConnectivityCommand.setDownloadsPaused {
             guard let paused = message[WatchConnectivityKey.paused] as? Bool,
                   ConfigurationManager.shared.isSabNZBConfigured else {

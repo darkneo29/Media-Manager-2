@@ -6,6 +6,9 @@
 
 import XCTest
 import UIKit
+#if os(iOS) && MEDIA_APP_INTENTS_TESTING
+import AppIntentsTesting
+#endif
 
 final class Media_ManagerUITests: XCTestCase {
 
@@ -23,6 +26,63 @@ final class Media_ManagerUITests: XCTestCase {
     }
 
     #if os(iOS)
+    #if MEDIA_APP_INTENTS_TESTING
+    @available(iOS 27.0, *)
+    @MainActor
+    func testSystemMovieEntityQuery() async throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--media-intelligence-fixtures"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Movies"].waitForExistence(timeout: 15))
+        let definitions = IntentDefinitions(bundleIdentifier: "com.myandroidtv.MediaManager")
+        let entities = try await definitions.entities["MovieSearchResultEntity"].entities(identifiers: [800, 999])
+        XCTAssertEqual(entities.count, 1)
+        XCTAssertEqual(entities.first?.identifier.instanceIdentifier, "800")
+        app.buttons["openLibraryAssistant"].tap()
+        let title = app.buttons["The Lunar Garden (2026)"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        title.tap()
+        XCTAssertTrue(app.staticTexts["The Lunar Garden"].waitForExistence(timeout: 5))
+        let annotations = try await definitions.entities["MovieSearchResultEntity"].viewAnnotations()
+        XCTAssertTrue(annotations.contains { $0.entity.identifier.instanceIdentifier == "800" }, "Movie details should expose the catalog entity")
+        var indexed = false
+        for _ in 0..<15 {
+            let results = try await definitions.entities["MovieSearchResultEntity"].spotlightQuery("Lunar")
+            if results.contains(where: { $0.identifier.instanceIdentifier == "800" }) { indexed = true; break }
+            try await Task.sleep(for: .seconds(1))
+        }
+        XCTAssertTrue(indexed, "Loaded movie should be discoverable through Spotlight")
+    }
+
+    #endif
+
+    @MainActor
+    func testLibraryAssistantAvailabilityAndFallback() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-radarrURL", "", "-sonarrURL", "", "-sabnzbURL", "", "-unraidURL", "", "-iCloudSyncEnabled", "NO"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Movies"].waitForExistence(timeout: 15))
+        let assistant = app.buttons["openLibraryAssistant"]
+        if #available(iOS 27.0, *) {
+            XCTAssertTrue(assistant.waitForExistence(timeout: 10))
+            assistant.tap()
+            let query = app.textFields["libraryAssistantQuery"]
+            let multilineQuery = app.textViews["libraryAssistantQuery"]
+            XCTAssertTrue(query.waitForExistence(timeout: 5) || multilineQuery.exists)
+            XCTAssertTrue(app.staticTexts["No matching movies"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["No matching TV shows"].exists)
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "OS27 Library Assistant"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            app.buttons["Done"].tap()
+        } else {
+            XCTAssertFalse(assistant.exists)
+        }
+        app.tabBars.buttons["Movies"].tap()
+        XCTAssertTrue(app.staticTexts["Radarr Not Configured"].waitForExistence(timeout: 5))
+    }
+
     @MainActor
     func testMainNavigationAndServerSettings() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "iPhone More navigation")

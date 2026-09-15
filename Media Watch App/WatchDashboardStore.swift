@@ -16,6 +16,9 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     @Published private(set) var addedResultIds: Set<String> = []
     @Published private(set) var isControllingDownloads = false
     @Published private(set) var downloadActionStatus = ""
+    @Published private(set) var librarySummary = ""
+    @Published private(set) var isSummarizing = false
+    private var summaryRequestID: UUID?
     private var pendingRefresh = false
     private var activeSearchId: UUID?
     private var activeAddId: UUID?
@@ -54,6 +57,42 @@ final class WatchDashboardStore: NSObject, ObservableObject {
     func requestRefresh(queueWhenUnreachable: Bool = true) {
         guard !isRefreshing else { return }
         send(command: queueWhenUnreachable ? WatchConnectivityCommand.refreshSnapshot : WatchConnectivityCommand.refreshDownloads, queueWhenUnreachable: queueWhenUnreachable)
+    }
+
+    func requestLibrarySummary() {
+        guard !isSummarizing else { return }
+        activate()
+        guard WCSession.isSupported(), WCSession.default.activationState == .activated,
+              WCSession.default.isReachable else {
+            librarySummary = "Open Media Manager on your iPhone to get a current summary."
+            return
+        }
+        let id = UUID()
+        summaryRequestID = id
+        isSummarizing = true
+        librarySummary = ""
+        WCSession.default.sendMessage([WatchConnectivityKey.command: WatchConnectivityCommand.librarySummary]) { [weak self] reply in
+            Task { @MainActor in
+                guard let self, self.summaryRequestID == id else { return }
+                self.summaryRequestID = nil
+                self.isSummarizing = false
+                self.librarySummary = reply["summary"] as? String ?? "Update Media Manager on iPhone to use summaries."
+            }
+        } errorHandler: { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.summaryRequestID == id else { return }
+                self.summaryRequestID = nil
+                self.isSummarizing = false
+                self.librarySummary = "Couldn't reach your iPhone. Try again when connected."
+            }
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, self.summaryRequestID == id else { return }
+            self.summaryRequestID = nil
+            self.isSummarizing = false
+            self.librarySummary = "The summary took too long. Try again on your iPhone."
+        }
     }
 
     func toggleDownloads() {

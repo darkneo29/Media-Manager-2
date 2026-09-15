@@ -5,6 +5,7 @@
 //
 
 import SwiftUI
+import AppIntents
 
 @main
 struct Media_ManagerApp: App {
@@ -12,6 +13,9 @@ struct Media_ManagerApp: App {
     @State private var deepLinkHandler = DeepLinkHandler.shared
 
     init() {
+        #if DEBUG && os(iOS)
+        MediaIntelligenceFixtures.installIfRequested()
+        #endif
         #if DEBUG
         UnraidIntegrationFixtures.installIfRequested()
         #endif
@@ -42,6 +46,7 @@ struct Media_ManagerApp: App {
                 }
                 .task(id: scenePhase) {
                     guard scenePhase == .active else { return }
+                    MediaManagerShortcuts.updateAppShortcutParameters()
                     // Start sync even when Settings has never been opened.
                     while !Task.isCancelled {
                         await iCloudSyncService.shared.synchronize()

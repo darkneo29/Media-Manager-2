@@ -7,18 +7,23 @@ struct TVShowSearchResultEntity: AppEntity {
     var id: Int
 
     /// Show title
+    @Property(title: "Title")
     var title: String
 
     /// First aired year
+    @Property(title: "Year")
     var year: Int
 
     /// Show overview/description
+    @Property(title: "Overview")
     var overview: String?
 
     /// Number of seasons
+    @Property(title: "Seasons")
     var seasonCount: Int
 
     /// Network name
+    @Property(title: "Network")
     var network: String?
 
     /// Type display representation for the entity
@@ -41,7 +46,7 @@ struct TVShowSearchResultEntity: AppEntity {
     }
 
     /// Default query for finding TV shows
-    static var defaultQuery = TVShowSearchResultQuery()
+    static var defaultQuery = TVShowSearchResultStringQuery()
 
     /// Initialize from TVShowLookup
     init(from lookup: TVShowLookup) {
@@ -64,50 +69,43 @@ struct TVShowSearchResultEntity: AppEntity {
     }
 }
 
-/// Query for searching TV shows via Sonarr
+/// Resolve saved Shortcuts parameters by their authoritative catalog ID.
 struct TVShowSearchResultQuery: EntityQuery {
     @MainActor
     func entities(for identifiers: [Int]) async throws -> [TVShowSearchResultEntity] {
-        // Return empty - suggestedEntities is the main entry point
-        return []
+        guard ConfigurationManager.shared.isSonarrConfigured else { return [] }
+        return try await MediaEntityResolution.resolve(identifiers) { id in
+            let results = try await SonarrService.shared.searchShows(term: "tvdb:\(id)")
+            return results.first(where: { $0.tvdbId == id }).map { TVShowSearchResultEntity(from: $0) }
+        }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [TVShowSearchResultEntity] {
-        // Return empty suggestions - user must search
-        return []
+        guard ConfigurationManager.shared.isSonarrConfigured else { return [] }
+        return try await SonarrService.shared.fetchShows().prefix(20).compactMap { item in
+            guard let id = item.tvdbId, id > 0 else { return nil }
+            return TVShowSearchResultEntity(id: id, title: item.title, year: item.year, overview: item.overview, seasonCount: item.seasonCount, network: item.network)
+        }
     }
 }
 
-/// String-based query for searching TV shows by title
 struct TVShowSearchResultStringQuery: EntityStringQuery {
     @MainActor
     func entities(for identifiers: [Int]) async throws -> [TVShowSearchResultEntity] {
-        return []
+        try await TVShowSearchResultQuery().entities(for: identifiers)
     }
 
     @MainActor
     func entities(matching string: String) async throws -> [TVShowSearchResultEntity] {
-        let config = ConfigurationManager.shared
-
-        guard config.isSonarrConfigured else {
-            return []
-        }
-
-        guard !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return []
-        }
-
-        do {
-            let results = try await SonarrService.shared.searchShows(term: string)
-            return results.map { TVShowSearchResultEntity(from: $0) }
-        } catch {
-            return []
-        }
+        let term = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ConfigurationManager.shared.isSonarrConfigured, !term.isEmpty else { return [] }
+        let results = try await SonarrService.shared.searchShows(term: term)
+        return MediaEntityResolution.exactCatalogMatches(results, term: term, prefix: "tvdb", id: \.tvdbId).map { TVShowSearchResultEntity(from: $0) }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [TVShowSearchResultEntity] {
-        return []
+        try await TVShowSearchResultQuery().suggestedEntities()
     }
 }

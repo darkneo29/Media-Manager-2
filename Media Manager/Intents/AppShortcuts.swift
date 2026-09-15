@@ -18,10 +18,11 @@ struct MediaManagerShortcuts: AppShortcutsProvider {
 
         // Quick Add Movie shortcut
         AppShortcut(
-            intent: QuickAddMovieIntent(),
+            intent: AddSelectedMovieIntent(),
             phrases: [
                 "Quick add movie to \(.applicationName)",
-                "Quickly add a movie in \(.applicationName)"
+                "Quickly add a movie in \(.applicationName)",
+                "Add the movie \(\.$movie) to \(.applicationName)"
             ],
             shortTitle: "Quick Add Movie",
             systemImageName: "film.badge.plus"
@@ -41,10 +42,12 @@ struct MediaManagerShortcuts: AppShortcutsProvider {
 
         // Quick Add TV Show shortcut
         AppShortcut(
-            intent: QuickAddTVShowIntent(),
+            intent: AddSelectedTVShowIntent(),
             phrases: [
                 "Quick add TV show to \(.applicationName)",
-                "Quickly add a series in \(.applicationName)"
+                "Quickly add a series in \(.applicationName)",
+                "Add the TV show \(\.$show) to \(.applicationName)",
+                "Add the series \(\.$show) to \(.applicationName)"
             ],
             shortTitle: "Quick Add TV Show",
             systemImageName: "tv.badge.plus"

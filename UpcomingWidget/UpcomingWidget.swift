@@ -11,7 +11,7 @@ struct UpcomingWidget: Widget {
     let kind: String = "UpcomingWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: UpcomingTimelineProvider()) { entry in
+        AppIntentConfiguration(kind: kind, intent: UpcomingWidgetConfiguration.self, provider: ConfigurableUpcomingProvider()) { entry in
             UpcomingWidgetEntryView(entry: entry)
                 .containerBackground(.fill.tertiary, for: .widget)
         }

@@ -21,6 +21,13 @@ struct RadarrErrorResponse: Codable {
     let errorMessage: String
     let attemptedValue: String?
     let severity: String?
+
+    /// Only catalog identity validation proves a duplicate; paths and profiles can also "exist".
+    func isDuplicateCatalogID(_ property: String) -> Bool {
+        propertyName?.caseInsensitiveCompare(property) == .orderedSame &&
+            errorMessage.localizedCaseInsensitiveContains("already") &&
+            (errorMessage.localizedCaseInsensitiveContains("exist") || errorMessage.localizedCaseInsensitiveContains("added"))
+    }
 }
 
 class RadarrService {
@@ -212,8 +219,7 @@ class RadarrService {
             if let errorResponse = try? JSONDecoder().decode([RadarrErrorResponse].self, from: data),
                let firstError = errorResponse.first {
                 // Check for "already exists" type errors
-                if firstError.errorMessage.lowercased().contains("already") ||
-                   firstError.errorMessage.lowercased().contains("exists") {
+                if firstError.isDuplicateCatalogID("TmdbId") {
                     throw RadarrError.movieAlreadyExists(movie.title)
                 }
                 throw RadarrError.apiError(firstError.errorMessage)

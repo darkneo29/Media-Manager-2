@@ -46,6 +46,14 @@ struct WatchDashboardView: View {
                         Label("Upcoming", systemImage: "calendar")
                     }
                 }
+                if #available(watchOS 27.0, *) {
+                    Section("Library Summary") {
+                        Button("Summarize", systemImage: "sparkles") { store.requestLibrarySummary() }
+                            .disabled(store.isSummarizing)
+                        if store.isSummarizing { ProgressView("Asking iPhone…") }
+                        if !store.librarySummary.isEmpty { Text(store.librarySummary).font(.callout) }
+                    }
+                }
                 Section("Library") {
                     HStack(spacing: 6) {
                         MetricTile(value: store.hasSnapshot ? "\(store.snapshot.library.movieCount)" : "—", label: "Movies", icon: "film.fill")

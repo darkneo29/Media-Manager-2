@@ -7,15 +7,19 @@ struct MovieSearchResultEntity: AppEntity {
     var id: Int
 
     /// Movie title
+    @Property(title: "Title")
     var title: String
 
     /// Release year
+    @Property(title: "Year")
     var year: Int
 
     /// Movie overview/description
+    @Property(title: "Overview")
     var overview: String?
 
     /// Runtime in minutes
+    @Property(title: "Runtime in Minutes")
     var runtime: Int
 
     /// Type display representation for the entity
@@ -30,7 +34,7 @@ struct MovieSearchResultEntity: AppEntity {
     }
 
     /// Default query for finding movies
-    static var defaultQuery = MovieSearchResultQuery()
+    static var defaultQuery = MovieSearchResultStringQuery()
 
     /// Initialize from MovieLookup
     init(from lookup: MovieLookup) {
@@ -51,51 +55,43 @@ struct MovieSearchResultEntity: AppEntity {
     }
 }
 
-/// Query for searching movies via Radarr
+/// Resolve saved Shortcuts parameters by their authoritative catalog ID.
 struct MovieSearchResultQuery: EntityQuery {
     @MainActor
     func entities(for identifiers: [Int]) async throws -> [MovieSearchResultEntity] {
-        // This would require fetching by ID, but Radarr search is by term
-        // Return empty for now - the suggestedEntities is the main entry point
-        return []
+        guard ConfigurationManager.shared.isRadarrConfigured else { return [] }
+        return try await MediaEntityResolution.resolve(identifiers) { id in
+            let results = try await RadarrService.shared.searchMovies(term: "tmdb:\(id)")
+            return results.first(where: { $0.tmdbId == id }).map { MovieSearchResultEntity(from: $0) }
+        }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [MovieSearchResultEntity] {
-        // Return empty suggestions - user must search
-        return []
+        guard ConfigurationManager.shared.isRadarrConfigured else { return [] }
+        return try await RadarrService.shared.fetchMovies().prefix(20).compactMap { item in
+            guard let id = item.tmdbId, id > 0 else { return nil }
+            return MovieSearchResultEntity(id: id, title: item.title, year: item.year, overview: item.overview, runtime: item.runtime)
+        }
     }
 }
 
-/// String-based query for searching movies by title
 struct MovieSearchResultStringQuery: EntityStringQuery {
     @MainActor
     func entities(for identifiers: [Int]) async throws -> [MovieSearchResultEntity] {
-        return []
+        try await MovieSearchResultQuery().entities(for: identifiers)
     }
 
     @MainActor
     func entities(matching string: String) async throws -> [MovieSearchResultEntity] {
-        let config = ConfigurationManager.shared
-
-        guard config.isRadarrConfigured else {
-            return []
-        }
-
-        guard !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return []
-        }
-
-        do {
-            let results = try await RadarrService.shared.searchMovies(term: string)
-            return results.map { MovieSearchResultEntity(from: $0) }
-        } catch {
-            return []
-        }
+        let term = string.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ConfigurationManager.shared.isRadarrConfigured, !term.isEmpty else { return [] }
+        let results = try await RadarrService.shared.searchMovies(term: term)
+        return MediaEntityResolution.exactCatalogMatches(results, term: term, prefix: "tmdb", id: \.tmdbId).map { MovieSearchResultEntity(from: $0) }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [MovieSearchResultEntity] {
-        return []
+        try await MovieSearchResultQuery().suggestedEntities()
     }
 }

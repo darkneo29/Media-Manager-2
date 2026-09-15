@@ -13,12 +13,14 @@ class LibraryStateManager: ObservableObject {
         didSet {
             moviesRevision += 1
             invalidateMovieIndexes()
+            updateSpotlight()
         }
     }
     @Published private(set) var tvShows: [TVShow] = [] {
         didSet {
             tvShowsRevision += 1
             invalidateShowIndexes()
+            updateSpotlight()
         }
     }
     @Published private(set) var qualityProfiles: [QualityProfile] = []
@@ -33,6 +35,12 @@ class LibraryStateManager: ObservableObject {
     @Published private(set) var qualityProfilesErrorMessage: String?
     @Published private(set) var moviesRevision = 0
     @Published private(set) var tvShowsRevision = 0
+
+    private func updateSpotlight() {
+        #if os(iOS)
+        MediaSpotlightService.shared.update(movies: movies, shows: tvShows)
+        #endif
+    }
 
     // MARK: - Cached Indexes (for O(1) lookups)
 
@@ -388,6 +396,7 @@ class LibraryStateManager: ObservableObject {
     private func resetMovies() {
         moviesLoadGeneration &+= 1
         if !movies.isEmpty { movies = [] }
+        else { updateSpotlight() }
         lastMoviesRefresh = nil
         moviesErrorMessage = nil
         isLoadingMovies = false
@@ -396,6 +405,7 @@ class LibraryStateManager: ObservableObject {
     private func resetShows() {
         showsLoadGeneration &+= 1
         if !tvShows.isEmpty { tvShows = [] }
+        else { updateSpotlight() }
         lastShowsRefresh = nil
         showsErrorMessage = nil
         isLoadingShows = false

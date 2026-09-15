@@ -35,6 +35,8 @@ final class DeepLinkHandler {
     /// The pending destination to navigate to
     var pendingDestination: DeepLinkDestination?
 
+    var pendingLibrarySearch: String?
+
     /// A backup document waiting for the Settings restore flow to consume it.
     var pendingBackupURL: URL?
 

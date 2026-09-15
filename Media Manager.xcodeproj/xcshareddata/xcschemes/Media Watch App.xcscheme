@@ -46,7 +46,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BC01A9A89F4149F0B7A97D94"
             BuildableName = "Media Watch App.app"
-            BlueprintName = "Media Watch App"
             ReferencedContainer = "container:Media Manager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +62,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BC01A9A89F4149F0B7A97D94"
             BuildableName = "Media Watch App.app"
-            BlueprintName = "Media Watch App"
             ReferencedContainer = "container:Media Manager.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

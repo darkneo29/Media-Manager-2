@@ -450,6 +450,7 @@ struct MovieDetailView: View {
                 }
             }
         }
+        .mediaEntityAnnotation(movie: movie)
         .navigationTitle("Details")
         .navBarTitleDisplayMode(.inline)
         .toolbar {

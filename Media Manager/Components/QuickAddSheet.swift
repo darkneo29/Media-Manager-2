@@ -203,6 +203,7 @@ struct QuickAddMovieSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #endif
         .background(ColorPalette.backgroundDark)
+        .mediaSearchEntityAnnotation(MovieSearchResultEntity(id: movie.id, title: movie.title, year: movie.year ?? 0, overview: movie.overview))
         .task {
             loadTrailer()
             await loadOptions()
@@ -549,6 +550,7 @@ struct QuickAddTVShowSheet: View {
     @Environment(\.openURL) var openURL
     @StateObject private var libraryState = LibraryStateManager.shared
 
+    @State private var contextTVDBID: Int?
     @State private var isAdding = false
     @State private var errorMessage: String?
     @State private var isSuccess = false
@@ -747,6 +749,12 @@ struct QuickAddTVShowSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #endif
         .background(ColorPalette.backgroundDark)
+        .mediaSearchEntityAnnotation(contextTVDBID.map { TVShowSearchResultEntity(id: $0, title: show.name, year: show.year ?? 0, overview: show.overview) })
+        .task {
+            #if os(iOS)
+            if #available(iOS 27.0, *) { contextTVDBID = try? await resolvedTVDBId() }
+            #endif
+        }
         .task {
             // Load trailer
             loadTrailer()

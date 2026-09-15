@@ -35,6 +35,49 @@ enum WhatsNewCatalog {
     // Keep the newest release first so Settings can summarize the latest changes.
     static let releases: [WhatsNewRelease] = [
         WhatsNewRelease(
+            id: "2026-09-15-version-3.0-build-19",
+            title: "Version 3.0 Build 19",
+            subtitle: "New OS 27 features with continued OS 26 support",
+            entries: [
+                WhatsNewEntry(
+                    id: "os27-library-assistant",
+                    kind: .newFeature,
+                    title: "Library Assistant on iOS 27",
+                    description: "Search movies and shows together from Home, with Spotlight helping find related matches. On supported devices, ask on-device AI questions about a sample of your library or identify a title from a photo when image support is available."
+                ),
+                WhatsNewEntry(
+                    id: "os27-siri-spotlight",
+                    kind: .newFeature,
+                    title: "More Ways to Find Your Library",
+                    description: "On iOS 27, library titles appear in Spotlight, Siri can open in-app library search, and movie and show screens share title context with supported system actions."
+                ),
+                WhatsNewEntry(
+                    id: "exact-shortcut-title-actions",
+                    kind: .improvement,
+                    title: "More Accurate Siri and Shortcuts Actions",
+                    description: "Ask Siri to add a movie or TV show by title, with clearer follow-up choices for matching titles. Selected-title and Quick Add actions keep your saved preferences, and successful adds appear in your library immediately."
+                ),
+                WhatsNewEntry(
+                    id: "configurable-upcoming-widget",
+                    kind: .newFeature,
+                    title: "Choose Your Widget Releases",
+                    description: "Configure the Upcoming widget to show all releases, movies only, or TV shows only. Available on OS 26 and OS 27."
+                ),
+                WhatsNewEntry(
+                    id: "watch27-library-summary",
+                    kind: .newFeature,
+                    title: "Library Summaries on Apple Watch",
+                    description: "On watchOS 27, request a library and download summary from your paired iPhone. A supported iPhone can use on-device AI to rewrite the summary, with a factual summary available when AI is unavailable."
+                ),
+                WhatsNewEntry(
+                    id: "os26-compatibility-os27-appearance",
+                    kind: .improvement,
+                    title: "Ready for OS 27, Still at Home on OS 26",
+                    description: "Navigation adopts the system appearance on iOS 27 while OS 26 keeps its familiar experience. Existing library browsing, downloads, and media controls remain available on OS 26."
+                )
+            ]
+        ),
+        WhatsNewRelease(
             id: "2026-09-07-version-2.10",
             title: "Version 2.10",
             subtitle: "A refreshed Apple Watch experience",
